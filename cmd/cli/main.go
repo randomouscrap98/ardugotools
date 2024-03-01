@@ -8,4 +8,6 @@ import (
 func main() {
 	fmt.Println("Wow?")
 	arduboy.About()
+	arduboy.ListDevices()
+	arduboy.ListDetailedDevices()
 }
