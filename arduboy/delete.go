@@ -38,6 +38,7 @@ func ListDetailedDevices() {
 		if port.IsUSB {
 			fmt.Printf("   USB ID     %s:%s\n", port.VID, port.PID)
 			fmt.Printf("   USB serial %s\n", port.SerialNumber)
+			fmt.Printf("   USB Product %s\n", port.Product)
 		}
 	}
 }

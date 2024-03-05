@@ -1,0 +1,12 @@
+-- Command to list info about device
+- PID/VID can get from go library
+- Output can be in multiple formats? Maybe see how go handles serialization? Maybe only
+  json for now
+- The device "board type" can be retrieved using the python list (make it a dictionary?)
+- Whether the bootloader is active can be pulled from the vid/pid as well. consider how to
+  do this in the dictionary? Maybe a simple array of structs?
+- The actual device name (Arduboy Mini/etc) can't be pulled with this stupid go library. 
+  You'll need to check the bootloader
+- Can return jdec info as well, for the size (maybe) and the manufacturer and stuff
+
+- Do we return a list? Sure, each entry can list the endpoint you can find the device on
