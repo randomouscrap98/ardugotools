@@ -1,4 +1,5 @@
 main
+ardugotools
 *.exe
 *.test
 ignore/

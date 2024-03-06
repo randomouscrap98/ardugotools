@@ -2,8 +2,6 @@ package main
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"log"
 	"os"
 
@@ -11,20 +9,18 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
+// Scan for arduboys and return json
 func scanAction() {
 	devices, err := arduboy.GetBasicDevices()
 	if err != nil {
 		log.Fatalln("Couldn't pull devices: ", err)
 	}
-	rawjson, err := json.Marshal(devices)
-	if err != nil {
-		log.Fatalln("Couldn't serialize json: ", err)
-	}
-	fmt.Println(string(rawjson))
+	PrintJson(devices)
 }
 
 func main() {
 
+	// Used this example: https://github.com/urfave/cli/blob/main/docs/v3/examples/subcommands.md
 	cmd := &cli.Command{
 		Commands: []*cli.Command{
 			{
@@ -74,11 +70,4 @@ func main() {
 	if err := cmd.Run(context.Background(), os.Args); err != nil {
 		log.Fatal(err)
 	}
-
-	//fmt.Println("Done")
-
-	//fmt.Println("Wow?")
-	//arduboy.About()
-	//arduboy.ListDevices()
-	//arduboy.ListDetailedDevices()
 }
