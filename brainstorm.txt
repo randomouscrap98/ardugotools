@@ -10,3 +10,6 @@
 - Can return jdec info as well, for the size (maybe) and the manufacturer and stuff
 
 - Do we return a list? Sure, each entry can list the endpoint you can find the device on
+
+Now that we have the thing outputting a list:
+- Need the cli argument parser thing.
