@@ -1,9 +1,9 @@
 package arduboy
 
 import (
-	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"time"
 
 	//"go.bug.st/serial"
@@ -93,49 +93,13 @@ type ExtendedDeviceInfo struct {
 	BasicInfo        BasicDeviceInfo
 	JdecInfo         JdecInfo
 	BootloaderDevice string
+	Version          int
 }
-
-// type DeviceInfo struct {
-// 	VidPid           string
-// 	Port             string
-// 	Product          string
-// 	BoardType        string
-// 	BootloaderDevice string
-// 	Bootloader       bool
-// 	Jdec             JdecInfo
-// }
-//
 
 // Construct 'standardized' VID:PID string (the same format python uses, just in case)
 func VidPidString(vid string, pid string) string {
 	return fmt.Sprintf("VID:PID=%s:%s", vid, pid)
 }
-
-// Given a single port info, parse as much as you can. Returns error
-// if port isn't arduboy
-/* func parsePortInfo(port *enumerator.PortDetails) BasicDeviceInfo, error {
-		if port.IsUSB {
-			var vidpid = fmt.Sprintf("VID:PID=%s:%s", port.VID, port.PID)
-			// See if the device's VIDPID is in the table
-			for key, boardinfo := range VidPidTable {
-				// We may have dummy values; see isBootLoader later
-				if key == vidpid {
-					return BasicDeviceInfo{
-						VidPid:       vidpid,
-						BoardType:    boardinfo.Name,
-						IsBootloader: boardinfo.IsBootloader,
-						Product:      port.Product,
-						Port:         port.Name,
-					}), nil
-				}
-			}
-			if !foundDevice {
-				log.Println("Non-arduboy device on port ", port.Name, ": ", vidpid)
-			}
-		} else {
-			log.Println("Port not USB: ", port.Name)
-		}
-} */
 
 // First set of functions is for retrieving basic device information, stuff we can
 // get without querying the device
@@ -207,7 +171,7 @@ func ConnectWithBootloader(port string) (io.ReadWriteCloser, *BasicDeviceInfo, e
 		}
 	}
 	if device == nil {
-		return nil, nil, errors.New("Device not found!")
+		return nil, nil, fmt.Errorf("Device not found!")
 	}
 	// Now, check if bootloader. If not, have to reconnect and try again
 	if !device.IsBootloader {
@@ -220,16 +184,52 @@ func ConnectWithBootloader(port string) (io.ReadWriteCloser, *BasicDeviceInfo, e
 		if err != nil {
 			return nil, nil, err
 		}
-		if port == AnyPortKey {
-			time.Sleep(2 * time.Second)
-			return ConnectWithBootloader(port)
-		} else {
-			return nil, nil, errors.New(fmt.Sprintf("Device %s not in bootloader mode, reset", device.Port))
-		}
+		// NOTE: it is OK if the port isn't found again: that's per-operating-system.
+		// if you're on Windows, you may be out of luck, but on Linux, chances are high
+		// it'll continue to work, so might as well make it work where it can.
+		time.Sleep(2 * time.Second)
+		return ConnectWithBootloader(port)
 	}
 	sercon, err := serial.Open(device.Port, &serial.Mode{BaudRate: DefaultBaudRate})
 	if err != nil {
 		return nil, nil, err
 	}
 	return sercon, device, nil
+}
+
+// retrieve the version from the bootloader
+func GetVersion(sercon io.ReadWriter) (int, error) {
+	bcount, err := sercon.Write([]byte("V"))
+	if err != nil {
+		return 0, err
+	}
+	if bcount != 1 {
+		return 0, fmt.Errorf("Didn't write enough data in GetVersion?")
+	}
+	var version [2]byte
+	bcount, err = sercon.Read(version[:])
+	if bcount != 2 {
+		return 0, fmt.Errorf("Didn't read enough data in GetVersion?")
+	}
+	if err != nil {
+		return 0, err
+	}
+	var num int
+	num, err = strconv.Atoi(string(version[:]))
+	if err != nil {
+		return 0, err
+	}
+	return num, nil
+}
+
+// Get extended device info from the given information
+func QueryDevice(device *BasicDeviceInfo, sercon io.ReadWriteCloser) (*ExtendedDeviceInfo, error) {
+	var result ExtendedDeviceInfo
+	var err error
+	result.BasicInfo = *device
+	result.Version, err = GetVersion(sercon)
+	if err != nil {
+		return nil, err
+	}
+	return &result, nil
 }

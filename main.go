@@ -19,11 +19,13 @@ func scanAction() {
 }
 
 func queryAction(device string) {
-	_, d, err := arduboy.ConnectWithBootloader(device)
+	sercon, d, err := arduboy.ConnectWithBootloader(device)
 	if err != nil {
 		log.Fatalf("Couldn't connect to '%s': %s", device, err)
 	}
-	PrintJson(d)
+	var extdata *arduboy.ExtendedDeviceInfo
+	extdata, err = arduboy.QueryDevice(d, sercon)
+	PrintJson(extdata)
 }
 
 func main() {
