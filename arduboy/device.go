@@ -108,13 +108,13 @@ type BasicDeviceInfo struct {
 }
 
 type ExtendedDeviceInfo struct {
-	BasicInfo        BasicDeviceInfo
-	JedecInfo        *JedecInfo
-	HasFlashcart     bool
-	BootloaderDevice string
-	Version          int
-	IsCaterina       bool
-	BootloaderLength int
+	BasicInfo         BasicDeviceInfo
+	JedecInfo         *JedecInfo
+	HasFlashcart      bool
+	BootloaderDevice  string
+	BootloaderVersion int
+	IsCaterina        bool
+	BootloaderLength  int
 }
 
 // Construct 'standardized' VID:PID string (the same format python uses, just in case)
@@ -220,23 +220,14 @@ func ConnectWithBootloader(port string) (io.ReadWriteCloser, *BasicDeviceInfo, e
 
 // retrieve the version from the bootloader
 func GetVersion(sercon io.ReadWriter) (int, error) {
-	bcount, err := sercon.Write([]byte("V"))
-	if err != nil {
-		return 0, err
-	}
-	if bcount != 1 {
-		return 0, fmt.Errorf("Didn't write enough data in GetVersion?")
-	}
+	rwep := ReadWriteErrorPass{rw: sercon}
+	rwep.WritePass([]byte("V"))
 	var version [2]byte
-	bcount, err = sercon.Read(version[:])
-	if err != nil {
-		return 0, err
+	rwep.ReadPass(version[:])
+	if rwep.err != nil {
+		return 0, rwep.err
 	}
-	if bcount != 2 {
-		return 0, fmt.Errorf("Didn't read enough data in GetVersion?")
-	}
-	var num int
-	num, err = strconv.Atoi(string(version[:]))
+	num, err := strconv.Atoi(string(version[:]))
 	if err != nil {
 		return 0, err
 	}
@@ -246,20 +237,12 @@ func GetVersion(sercon io.ReadWriter) (int, error) {
 // Figure out if the given device (with given pre-read version) is caterina or not
 func GetIsCaterina(version int, sercon io.ReadWriter) (bool, error) {
 	if version == 10 {
-		bcount, err := sercon.Write([]byte("r"))
-		if err != nil {
-			return false, err
-		}
-		if bcount != 1 {
-			return false, fmt.Errorf("Didn't write enough data in GetIsCaterina?")
-		}
+		rwep := ReadWriteErrorPass{rw: sercon}
+		rwep.WritePass([]byte("r"))
 		var lockbits [1]byte
-		bcount, err = sercon.Read(lockbits[:])
-		if err != nil {
-			return false, err
-		}
-		if bcount != 1 {
-			return false, fmt.Errorf("Didn't read enough data in GetIsCaterina?")
+		rwep.ReadPass(lockbits[:])
+		if rwep.err != nil {
+			return false, rwep.err
 		}
 		return lockbits[0]&0x10 != 0, nil
 	}
@@ -277,42 +260,22 @@ func (info *ExtendedDeviceInfo) GetBootloaderLength() int {
 	}
 }
 
-// Retrieve the raw Jedec identifier (includes multiple pieces of information)
-func getJedecId(sercon io.ReadWriter) ([3]byte, error) {
-	var jedecId [3]byte
-	bcount, err := sercon.Write([]byte("j"))
-	if err != nil {
-		return jedecId, err
-	}
-	if bcount != 1 {
-		return jedecId, fmt.Errorf("Didn't write enough data in getJedecId?")
-	}
-	bcount, err = sercon.Read(jedecId[:])
-	if err != nil {
-		return jedecId, err
-	}
-	if bcount != 3 {
-		return jedecId, fmt.Errorf("Didn't read enough data in getJedecId?")
-	}
-	return jedecId, nil
-}
-
 func (info *ExtendedDeviceInfo) GetJedecInfo(sercon io.ReadWriter) (*JedecInfo, error) {
-	if info.Version < MinBootloaderWithFlash {
-		log.Printf("Bootloader version too low for flashcart support! Need: %d, have: %d\n", MinBootloaderWithFlash, info.Version)
+	if info.BootloaderVersion < MinBootloaderWithFlash {
+		log.Printf("Bootloader version too low for flashcart support! Need: %d, have: %d\n",
+			MinBootloaderWithFlash, info.BootloaderVersion)
 		return nil, nil
 	}
+	rwep := ReadWriteErrorPass{rw: sercon}
 	var jedecId2 [3]byte
 	var result JedecInfo
-	var err error
-	result.ID, err = getJedecId(sercon)
-	if err != nil {
-		return nil, err
-	}
+	rwep.WritePass([]byte("j"))
+	rwep.ReadPass(result.ID[:])
 	time.Sleep(JedecVerifyWait)
-	jedecId2, err = getJedecId(sercon)
-	if err != nil {
-		return nil, err
+	rwep.WritePass([]byte("j"))
+	rwep.ReadPass(jedecId2[:])
+	if rwep.err != nil {
+		return nil, rwep.err
 	}
 	if !bytes.Equal(result.ID[:], jedecId2[:]) {
 		log.Printf("Jedec version producing garbage data, assuming no flashcart!\n")
@@ -338,11 +301,11 @@ func QueryDevice(device *BasicDeviceInfo, sercon io.ReadWriteCloser) (*ExtendedD
 	var result ExtendedDeviceInfo
 	var err error
 	result.BasicInfo = *device
-	result.Version, err = GetVersion(sercon)
+	result.BootloaderVersion, err = GetVersion(sercon)
 	if err != nil {
 		return nil, err
 	}
-	result.IsCaterina, err = GetIsCaterina(result.Version, sercon)
+	result.IsCaterina, err = GetIsCaterina(result.BootloaderVersion, sercon)
 	if err != nil {
 		return nil, err
 	}
