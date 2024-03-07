@@ -107,14 +107,18 @@ type BasicDeviceInfo struct {
 	IsBootloader bool
 }
 
+type BootloaderInfo struct {
+	Device     string
+	Length     int
+	IsCaterina bool
+	Version    int
+}
+
 type ExtendedDeviceInfo struct {
-	BasicInfo         BasicDeviceInfo
-	JedecInfo         *JedecInfo
-	HasFlashcart      bool
-	BootloaderDevice  string
-	BootloaderVersion int
-	IsCaterina        bool
-	BootloaderLength  int
+	Basic        *BasicDeviceInfo
+	Bootloader   *BootloaderInfo
+	Jedec        *JedecInfo
+	HasFlashcart bool
 }
 
 // Construct 'standardized' VID:PID string (the same format python uses, just in case)
@@ -218,102 +222,89 @@ func ConnectWithBootloader(port string) (io.ReadWriteCloser, *BasicDeviceInfo, e
 	return sercon, device, nil
 }
 
-// retrieve the version from the bootloader
-func GetVersion(sercon io.ReadWriter) (int, error) {
+// Pull as much bootloader information as possible without overstepping
+// into JEDEC or whatever
+func GetBootloaderInfo(sercon io.ReadWriter) (*BootloaderInfo, error) {
+	var result BootloaderInfo
+	var err error
 	rwep := ReadWriteErrorPass{rw: sercon}
-	rwep.WritePass([]byte("V"))
-	var version [2]byte
-	rwep.ReadPass(version[:])
-	if rwep.err != nil {
-		return 0, rwep.err
-	}
-	num, err := strconv.Atoi(string(version[:]))
-	if err != nil {
-		return 0, err
-	}
-	return num, nil
-}
 
-// Figure out if the given device (with given pre-read version) is caterina or not
-func GetIsCaterina(version int, sercon io.ReadWriter) (bool, error) {
-	if version == 10 {
-		rwep := ReadWriteErrorPass{rw: sercon}
+	// Read version
+	var version [2]byte
+	rwep.WritePass([]byte("V"))
+	rwep.ReadPass(version[:])
+	result.Version, err = strconv.Atoi(string(version[:]))
+	if err != nil {
+		return nil, err
+	}
+
+	// Figure out if caterina
+	if result.Version == 10 {
 		rwep.WritePass([]byte("r"))
 		var lockbits [1]byte
 		rwep.ReadPass(lockbits[:])
-		if rwep.err != nil {
-			return false, rwep.err
-		}
-		return lockbits[0]&0x10 != 0, nil
-	}
-	return version < 10, nil
-}
-
-// figure out the bootloader length based on given information
-func (info *ExtendedDeviceInfo) GetBootloaderLength() int {
-	// TODO: this function NEEDS to be improved!! There's a cathy2K and potentially other
-	// bootloaders!
-	if info.IsCaterina {
-		return CaterinaTotalSize
+		result.IsCaterina = lockbits[0]&0x10 != 0
 	} else {
-		return CathyTotalSize
+		result.IsCaterina = result.Version < 10
 	}
+
+	// TODO: this part NEEDS to be improved!! There's a cathy2K and potentially other bootloaders!
+	if result.IsCaterina {
+		result.Length = CaterinaTotalSize
+	} else {
+		result.Length = CathyTotalSize
+	}
+
+	return &result, rwep.err
 }
 
-func (info *ExtendedDeviceInfo) GetJedecInfo(sercon io.ReadWriter) (*JedecInfo, error) {
-	if info.BootloaderVersion < MinBootloaderWithFlash {
+func (info *BootloaderInfo) GetJedecInfo(sercon io.ReadWriter) (*JedecInfo, error) {
+	if info.Version < MinBootloaderWithFlash {
 		log.Printf("Bootloader version too low for flashcart support! Need: %d, have: %d\n",
-			MinBootloaderWithFlash, info.BootloaderVersion)
+			MinBootloaderWithFlash, info.Version)
 		return nil, nil
 	}
+
+	var result JedecInfo
 	rwep := ReadWriteErrorPass{rw: sercon}
 	var jedecId2 [3]byte
-	var result JedecInfo
+
 	rwep.WritePass([]byte("j"))
 	rwep.ReadPass(result.ID[:])
 	time.Sleep(JedecVerifyWait)
 	rwep.WritePass([]byte("j"))
 	rwep.ReadPass(jedecId2[:])
-	if rwep.err != nil {
-		return nil, rwep.err
-	}
+
 	if !bytes.Equal(result.ID[:], jedecId2[:]) {
 		log.Printf("Jedec version producing garbage data, assuming no flashcart!\n")
-		return nil, nil
+		return nil, rwep.err
 	}
 	if bytes.Equal(result.ID[:], []byte{0, 0, 0}) || bytes.Equal(result.ID[:], []byte{0xFF, 0xFF, 0xFF}) {
 		log.Printf("Jedec version invalid, assuming no flashcart!\n")
-		return nil, nil
+		return nil, rwep.err
 	}
-
 	if val, ok := JedecManufacturerKeys[int(result.ID[0])]; ok {
 		result.Manufacturer = val
 	} else {
 		result.Manufacturer = ""
 	}
-
 	result.Capacity = 1 << result.ID[2]
-	return &result, nil
+	return &result, rwep.err
 }
 
 // Get extended device info from the given information
 func QueryDevice(device *BasicDeviceInfo, sercon io.ReadWriteCloser) (*ExtendedDeviceInfo, error) {
 	var result ExtendedDeviceInfo
 	var err error
-	result.BasicInfo = *device
-	result.BootloaderVersion, err = GetVersion(sercon)
+	result.Basic = device
+	result.Bootloader, err = GetBootloaderInfo(sercon)
 	if err != nil {
 		return nil, err
 	}
-	result.IsCaterina, err = GetIsCaterina(result.BootloaderVersion, sercon)
+	result.Jedec, err = result.Bootloader.GetJedecInfo(sercon)
 	if err != nil {
 		return nil, err
 	}
-	result.BootloaderLength = result.GetBootloaderLength()
-	result.JedecInfo, err = result.GetJedecInfo(sercon)
-	if err != nil {
-		return nil, err
-	}
-	result.HasFlashcart = result.JedecInfo != nil
+	result.HasFlashcart = result.Jedec != nil
 	return &result, nil
 }
