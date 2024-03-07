@@ -1,29 +1,47 @@
 package arduboy
 
 import (
+	"bytes"
 	"fmt"
 	"io"
+	"log"
 	"strconv"
 	"time"
 
 	//"go.bug.st/serial"
-	"log"
-
 	"go.bug.st/serial"
 	"go.bug.st/serial/enumerator"
 )
 
-const AnyPortKey = "any"
-
 const (
+	AnyPortKey = "any"
+
+	ResetToBootloaderWait = 1 * time.Second
+	JedecVerifyWait       = 500 * time.Millisecond
+
 	DefaultBaudRate = 57600
 	RebootBaudRate  = 1200
+
+	FlashSize              int = 32768
+	FlashPageSize          int = 128
+	FlashPageCount         int = FlashSize / FlashPageSize
+	FXPageSize             int = 256
+	FXBlockSize            int = 65536
+	FxPagesPerBlock        int = FXBlockSize / FXPageSize
+	CaterinaTotalSize      int = 4096
+	CaterinaStartPage      int = (FlashSize - CaterinaTotalSize) / FlashPageSize
+	CathyTotalSize         int = 3072
+	CathyStartPage         int = (FlashSize - CathyTotalSize) / FlashPageSize
+	ScreenWidth            int = 128
+	ScreenHeight           int = 64
+	ScreenBytes            int = ScreenWidth * ScreenHeight / 8
+	MinBootloaderWithFlash     = 13
 )
 
 // A mapping from identifiers returned from the bootloader to manufacturer strings.
 // Pulled from Mr.Blinky's Python Utilities:
 // https://github.com/MrBlinky/Arduboy-Python-Utilities/blob/main/fxdata-upload.py
-var JdecManufacturerKeys = map[int]string{
+var JedecManufacturerKeys = map[int]string{
 	0x01: "Spansion",
 	0x14: "Cypress",
 	0x1C: "EON",
@@ -75,8 +93,8 @@ var VidPidTable = map[string]BasicBoardInfo{
 	"VID:PID=239A:800E": {Name: Board_AdafruitItsyBitsy, IsBootloader: false},
 }
 
-type JdecInfo struct {
-	ID           []byte
+type JedecInfo struct {
+	ID           [3]byte
 	Capacity     int32
 	Manufacturer string
 }
@@ -91,9 +109,12 @@ type BasicDeviceInfo struct {
 
 type ExtendedDeviceInfo struct {
 	BasicInfo        BasicDeviceInfo
-	JdecInfo         JdecInfo
+	JedecInfo        *JedecInfo
+	HasFlashcart     bool
 	BootloaderDevice string
 	Version          int
+	IsCaterina       bool
+	BootloaderLength int
 }
 
 // Construct 'standardized' VID:PID string (the same format python uses, just in case)
@@ -187,7 +208,7 @@ func ConnectWithBootloader(port string) (io.ReadWriteCloser, *BasicDeviceInfo, e
 		// NOTE: it is OK if the port isn't found again: that's per-operating-system.
 		// if you're on Windows, you may be out of luck, but on Linux, chances are high
 		// it'll continue to work, so might as well make it work where it can.
-		time.Sleep(2 * time.Second)
+		time.Sleep(ResetToBootloaderWait)
 		return ConnectWithBootloader(port)
 	}
 	sercon, err := serial.Open(device.Port, &serial.Mode{BaudRate: DefaultBaudRate})
@@ -208,11 +229,11 @@ func GetVersion(sercon io.ReadWriter) (int, error) {
 	}
 	var version [2]byte
 	bcount, err = sercon.Read(version[:])
-	if bcount != 2 {
-		return 0, fmt.Errorf("Didn't read enough data in GetVersion?")
-	}
 	if err != nil {
 		return 0, err
+	}
+	if bcount != 2 {
+		return 0, fmt.Errorf("Didn't read enough data in GetVersion?")
 	}
 	var num int
 	num, err = strconv.Atoi(string(version[:]))
@@ -220,6 +241,96 @@ func GetVersion(sercon io.ReadWriter) (int, error) {
 		return 0, err
 	}
 	return num, nil
+}
+
+// Figure out if the given device (with given pre-read version) is caterina or not
+func GetIsCaterina(version int, sercon io.ReadWriter) (bool, error) {
+	if version == 10 {
+		bcount, err := sercon.Write([]byte("r"))
+		if err != nil {
+			return false, err
+		}
+		if bcount != 1 {
+			return false, fmt.Errorf("Didn't write enough data in GetIsCaterina?")
+		}
+		var lockbits [1]byte
+		bcount, err = sercon.Read(lockbits[:])
+		if err != nil {
+			return false, err
+		}
+		if bcount != 1 {
+			return false, fmt.Errorf("Didn't read enough data in GetIsCaterina?")
+		}
+		return lockbits[0]&0x10 != 0, nil
+	}
+	return version < 10, nil
+}
+
+// figure out the bootloader length based on given information
+func (info *ExtendedDeviceInfo) GetBootloaderLength() int {
+	// TODO: this function NEEDS to be improved!! There's a cathy2K and potentially other
+	// bootloaders!
+	if info.IsCaterina {
+		return CaterinaTotalSize
+	} else {
+		return CathyTotalSize
+	}
+}
+
+// Retrieve the raw Jedec identifier (includes multiple pieces of information)
+func getJedecId(sercon io.ReadWriter) ([3]byte, error) {
+	var jedecId [3]byte
+	bcount, err := sercon.Write([]byte("j"))
+	if err != nil {
+		return jedecId, err
+	}
+	if bcount != 1 {
+		return jedecId, fmt.Errorf("Didn't write enough data in getJedecId?")
+	}
+	bcount, err = sercon.Read(jedecId[:])
+	if err != nil {
+		return jedecId, err
+	}
+	if bcount != 3 {
+		return jedecId, fmt.Errorf("Didn't read enough data in getJedecId?")
+	}
+	return jedecId, nil
+}
+
+func (info *ExtendedDeviceInfo) GetJedecInfo(sercon io.ReadWriter) (*JedecInfo, error) {
+	if info.Version < MinBootloaderWithFlash {
+		log.Printf("Bootloader version too low for flashcart support! Need: %d, have: %d\n", MinBootloaderWithFlash, info.Version)
+		return nil, nil
+	}
+	var jedecId2 [3]byte
+	var result JedecInfo
+	var err error
+	result.ID, err = getJedecId(sercon)
+	if err != nil {
+		return nil, err
+	}
+	time.Sleep(JedecVerifyWait)
+	jedecId2, err = getJedecId(sercon)
+	if err != nil {
+		return nil, err
+	}
+	if !bytes.Equal(result.ID[:], jedecId2[:]) {
+		log.Printf("Jedec version producing garbage data, assuming no flashcart!\n")
+		return nil, nil
+	}
+	if bytes.Equal(result.ID[:], []byte{0, 0, 0}) || bytes.Equal(result.ID[:], []byte{0xFF, 0xFF, 0xFF}) {
+		log.Printf("Jedec version invalid, assuming no flashcart!\n")
+		return nil, nil
+	}
+
+	if val, ok := JedecManufacturerKeys[int(result.ID[0])]; ok {
+		result.Manufacturer = val
+	} else {
+		result.Manufacturer = ""
+	}
+
+	result.Capacity = 1 << result.ID[2]
+	return &result, nil
 }
 
 // Get extended device info from the given information
@@ -231,5 +342,15 @@ func QueryDevice(device *BasicDeviceInfo, sercon io.ReadWriteCloser) (*ExtendedD
 	if err != nil {
 		return nil, err
 	}
+	result.IsCaterina, err = GetIsCaterina(result.Version, sercon)
+	if err != nil {
+		return nil, err
+	}
+	result.BootloaderLength = result.GetBootloaderLength()
+	result.JedecInfo, err = result.GetJedecInfo(sercon)
+	if err != nil {
+		return nil, err
+	}
+	result.HasFlashcart = result.JedecInfo != nil
 	return &result, nil
 }
