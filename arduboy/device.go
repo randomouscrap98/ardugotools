@@ -2,6 +2,7 @@ package arduboy
 
 import (
 	"bytes"
+	"crypto/md5"
 	"fmt"
 	"io"
 	"log"
@@ -254,6 +255,9 @@ func GetBootloaderInfo(sercon io.ReadWriter) (*BootloaderInfo, error) {
 	} else {
 		result.Length = CathyTotalSize
 	}
+
+	// Now that we have the length, read the bootloader in its entirety
+	var bootloader [CaterinaTotalSize]byte
 
 	return &result, rwep.err
 }

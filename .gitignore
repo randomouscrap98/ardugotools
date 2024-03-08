@@ -3,3 +3,6 @@ ardugotools
 *.exe
 *.test
 ignore/
+
+# A special softlink in my directory for testing purposes
+adbpy
