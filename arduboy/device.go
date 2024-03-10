@@ -3,6 +3,7 @@ package arduboy
 import (
 	"bytes"
 	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
@@ -15,7 +16,10 @@ import (
 )
 
 const (
-	AnyPortKey = "any"
+	AnyPortKey           = "any"
+	ArduboyDeviceKey     = "Arduboy"
+	ArduboyFXDeviceKey   = "ArduboyFX"
+	ArduboyMiniDeviceKey = "ArduboyMini"
 
 	ResetToBootloaderWait = 1 * time.Second
 	JedecVerifyWait       = 500 * time.Millisecond
@@ -113,6 +117,7 @@ type BootloaderInfo struct {
 	Length     int
 	IsCaterina bool
 	Version    int
+	MD5        string
 }
 
 type ExtendedDeviceInfo struct {
@@ -125,6 +130,16 @@ type ExtendedDeviceInfo struct {
 // Construct 'standardized' VID:PID string (the same format python uses, just in case)
 func VidPidString(vid string, pid string) string {
 	return fmt.Sprintf("VID:PID=%s:%s", vid, pid)
+}
+
+// Produce the command for setting the address before reading (page aligned)
+func AddressCommandPage(page int16) []byte {
+	return []byte{byte('A'), byte(page >> 2), byte((page & 3) << 6)}
+}
+
+// Produce the command for reading some amount from the current address
+func ReadFlashCommand(length int16) []byte {
+	return []byte{byte('g'), byte(length >> 8), byte(length & 255), byte('F')}
 }
 
 // First set of functions is for retrieving basic device information, stuff we can
@@ -257,7 +272,19 @@ func GetBootloaderInfo(sercon io.ReadWriter) (*BootloaderInfo, error) {
 	}
 
 	// Now that we have the length, read the bootloader in its entirety
-	var bootloader [CaterinaTotalSize]byte
+	var rawbl [CaterinaTotalSize]byte
+	rwep.WritePass(AddressCommandPage(int16(CaterinaStartPage)))
+	rwep.ReadPass(rawbl[:1]) // Read just one byte, we don't care what it is apparently
+	rwep.WritePass(ReadFlashCommand(int16(CaterinaTotalSize)))
+	rwep.ReadPass(rawbl[:])
+
+	// Cut it down to size before doing work on it. Calculate the hash
+	bootloader := rawbl[:result.Length]
+	hash := md5.Sum(bootloader)
+	result.MD5 = hex.EncodeToString(hash[:])
+
+	analysis := AnalyzeSketch(bootloader, true)
+	result.Device = analysis.DetectedDevice
 
 	return &result, rwep.err
 }
