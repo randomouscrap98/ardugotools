@@ -2,6 +2,9 @@ main
 ardugotools
 *.exe
 *.test
+*.hex
+*.bin
+*.arduboy
 ignore/
 
 # A special softlink in my directory for testing purposes

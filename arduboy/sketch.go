@@ -2,10 +2,13 @@ package arduboy
 
 import (
 	"bytes"
-	"log"
-	// "go.bug.st/serial"
-	// "go.bug.st/serial/enumerator"
+	"github.com/marcinbor85/gohex"
 	"io"
+	"log"
+)
+
+const (
+	HexLineLength = 16
 )
 
 type SketchAnalysis struct {
@@ -132,4 +135,12 @@ func ReadSketch(sercon io.ReadWriter) ([]byte, error) {
 	trimData := TrimUnused(baseData, FlashPageSize)
 	log.Printf("Trimmed sketch removed %d bytes\n", baseSize-len(trimData))
 	return trimData, nil
+}
+
+// Convert given byte blob to hex. Does NOT modify the data in any way
+func BinToHex(data []byte, writer io.Writer) error {
+	hexmem := gohex.NewMemory()
+	hexmem.SetBinary(0, data)
+	funnee := FunnyHexFixer{Writer: writer}
+	return hexmem.DumpIntelHex(&funnee, HexLineLength)
 }

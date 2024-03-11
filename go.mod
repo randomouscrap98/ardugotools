@@ -4,6 +4,7 @@ go 1.22.0
 
 require (
 	github.com/alecthomas/kong v0.9.0
+	github.com/marcinbor85/gohex v0.0.0-20210308104911-55fb1c624d84
 	go.bug.st/serial v1.6.2
 )
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 
 	"github.com/alecthomas/kong"
 	"github.com/randomouscrap98/ardugotools/arduboy"
@@ -59,9 +60,17 @@ func (c *SketchReadCmd) Run() error {
 	sketch, err := arduboy.ReadSketch(sercon)
 	fatalIfErr(c.Device, "read sketch", err)
 	hash := arduboy.Md5String(sketch)
+	// Figure out save location
 	if c.Outfile == "" {
 		c.Outfile = fmt.Sprintf("%s_%s.hex", hash, FileSafeDateTime())
 	}
+	// Open and save file
+	file, err := os.Create(c.Outfile)
+	fatalIfErr(c.Outfile, "open file for writing", err)
+	defer file.Close()
+	err = arduboy.BinToHex(sketch, file)
+	fatalIfErr(c.Outfile, "convert sketch to hex", err)
+	// Return data about the save
 	result := make(map[string]interface{})
 	result["Filename"] = c.Outfile
 	result["MD5"] = hash

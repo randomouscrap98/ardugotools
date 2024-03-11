@@ -3,6 +3,7 @@ package arduboy
 import (
 	"crypto/md5"
 	"encoding/hex"
+	"io"
 )
 
 // Produce the command for setting the address before reading (page aligned)
@@ -35,4 +36,26 @@ func TrimUnused(data []byte, blocksize int) []byte {
 func Md5String(data []byte) string {
 	hash := md5.Sum(data)
 	return hex.EncodeToString(hash[:])
+}
+
+// The hex writer library writes some record indicating an extended address
+// mode which Arduboy CLEARLY doesn't need nor want, and so we get rid of it.
+// By force.
+type FunnyHexFixer struct {
+	FirstLineRead bool
+	Writer        io.Writer
+}
+
+// Skip everything up to and including the first newline
+func (fhf *FunnyHexFixer) Write(data []byte) (int, error) {
+	if fhf.FirstLineRead {
+		return fhf.Writer.Write(data)
+	}
+	for i, b := range data {
+		if b == byte('\n') {
+			fhf.FirstLineRead = true
+			return fhf.Write(data[i+1:])
+		}
+	}
+	return len(data), nil
 }
