@@ -2,6 +2,10 @@ package arduboy
 
 import (
 	"bytes"
+	"log"
+	// "go.bug.st/serial"
+	// "go.bug.st/serial/enumerator"
+	"io"
 )
 
 type SketchAnalysis struct {
@@ -95,4 +99,37 @@ func AnalyzeSketch(bindata []byte, bootloader bool) SketchAnalysis {
 	}
 
 	return result
+}
+
+// Read the entire flash memory, including bootloader. This is ironically faster than
+// just reading the sketch
+func ReadFlash(sercon io.ReadWriter) ([]byte, error) {
+	rwep := ReadWriteErrorPass{rw: sercon}
+	// Read from address 0
+	rwep.WritePass(AddressCommandPage(0))
+	var readsingle [1]byte
+	rwep.ReadPass(readsingle[:])
+	rwep.WritePass(ReadFlashCommand(uint16(FlashSize)))
+	var result [FlashSize]byte
+	// Read the WHOLE memory (size of FlashSize)
+	rwep.ReadPass(result[:])
+	return result[:], rwep.err
+}
+
+// Read the entire sketch, without the bootloader. Also trims the sketch
+func ReadSketch(sercon io.ReadWriter) ([]byte, error) {
+	// Must get the information about the device
+	bootloader, err := GetBootloaderInfo(sercon)
+	if err != nil {
+		return nil, err
+	}
+	flash, err := ReadFlash(sercon)
+	if err != nil {
+		return nil, err
+	}
+	baseData := flash[:FlashSize-bootloader.Length]
+	baseSize := len(baseData)
+	trimData := TrimUnused(baseData, FlashPageSize)
+	log.Printf("Trimmed sketch removed %d bytes\n", baseSize-len(trimData))
+	return trimData, nil
 }

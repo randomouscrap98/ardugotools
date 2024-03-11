@@ -45,3 +45,10 @@ type FxHeader struct {
 	Developer string
 	Info      string
 }
+
+// Generate the bytes you can write to the flashcart
+func (header *FxHeader) MakeHeader() [FxHeaderLength]byte {
+	var result [FxHeaderLength]byte
+
+	return result
+}

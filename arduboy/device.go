@@ -2,15 +2,12 @@ package arduboy
 
 import (
 	"bytes"
-	"crypto/md5"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
 	"strconv"
 	"time"
 
-	//"go.bug.st/serial"
 	"go.bug.st/serial"
 	"go.bug.st/serial/enumerator"
 )
@@ -132,16 +129,6 @@ func VidPidString(vid string, pid string) string {
 	return fmt.Sprintf("VID:PID=%s:%s", vid, pid)
 }
 
-// Produce the command for setting the address before reading (page aligned)
-func AddressCommandPage(page int16) []byte {
-	return []byte{byte('A'), byte(page >> 2), byte((page & 3) << 6)}
-}
-
-// Produce the command for reading some amount from the current address
-func ReadFlashCommand(length int16) []byte {
-	return []byte{byte('g'), byte(length >> 8), byte(length & 255), byte('F')}
-}
-
 // First set of functions is for retrieving basic device information, stuff we can
 // get without querying the device
 
@@ -155,7 +142,7 @@ func GetBasicDevices() ([]BasicDeviceInfo, error) {
 	result := make([]BasicDeviceInfo, 0)
 	if len(ports) == 0 {
 		log.Println("No serial ports found!")
-		return result, err
+		return result, nil
 	}
 	for _, port := range ports {
 		if port.IsUSB {
@@ -273,15 +260,14 @@ func GetBootloaderInfo(sercon io.ReadWriter) (*BootloaderInfo, error) {
 
 	// Now that we have the length, read the bootloader in its entirety
 	var rawbl [CaterinaTotalSize]byte
-	rwep.WritePass(AddressCommandPage(int16(CaterinaStartPage)))
+	rwep.WritePass(AddressCommandPage(uint16(CaterinaStartPage)))
 	rwep.ReadPass(rawbl[:1]) // Read just one byte, we don't care what it is apparently
-	rwep.WritePass(ReadFlashCommand(int16(CaterinaTotalSize)))
+	rwep.WritePass(ReadFlashCommand(uint16(CaterinaTotalSize)))
 	rwep.ReadPass(rawbl[:])
 
 	// Cut it down to size before doing work on it. Calculate the hash
 	bootloader := rawbl[:result.Length]
-	hash := md5.Sum(bootloader)
-	result.MD5 = hex.EncodeToString(hash[:])
+	result.MD5 = Md5String(bootloader)
 
 	analysis := AnalyzeSketch(bootloader, true)
 	result.Device = analysis.DetectedDevice
@@ -289,6 +275,8 @@ func GetBootloaderInfo(sercon io.ReadWriter) (*BootloaderInfo, error) {
 	return &result, rwep.err
 }
 
+// Ask device for JEDEC info.
+// NOTE: this function will block for some time (500ms?) while it verifies the jedec ID!
 func (info *BootloaderInfo) GetJedecInfo(sercon io.ReadWriter) (*JedecInfo, error) {
 	if info.Version < MinBootloaderWithFlash {
 		log.Printf("Bootloader version too low for flashcart support! Need: %d, have: %d\n",

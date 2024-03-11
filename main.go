@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"log"
 	"os"
 
@@ -9,23 +11,47 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
+// Quick way to fail on error, since most commands are "doing" something on
+// behalf of something else.
+func fatalIfErr(subject string, doing string, err error) {
+	if err != nil {
+		log.Fatalf("%s - Couldn't %s: %s", subject, doing, err)
+	}
+}
+
 // Scan for arduboys and return json
 func scanAction() {
 	devices, err := arduboy.GetBasicDevices()
-	if err != nil {
-		log.Fatalln("Couldn't pull devices: ", err)
-	}
+	fatalIfErr("scan", "pull devices", err)
 	PrintJson(devices)
 }
 
-func queryAction(device string) {
+func connectWithBootloader(device string) (io.ReadWriteCloser, *arduboy.BasicDeviceInfo) {
 	sercon, d, err := arduboy.ConnectWithBootloader(device)
-	if err != nil {
-		log.Fatalf("Couldn't connect to '%s': %s", device, err)
-	}
-	var extdata *arduboy.ExtendedDeviceInfo
-	extdata, err = arduboy.QueryDevice(d, sercon)
+	fatalIfErr(device, "connect", err)
+	return sercon, d
+}
+
+func queryAction(device string) {
+	sercon, d := connectWithBootloader(device)
+	extdata, err := arduboy.QueryDevice(d, sercon)
+	fatalIfErr(device, "query device information", err)
 	PrintJson(extdata)
+}
+
+func sketchReadAction(device string, filename string) {
+	// Read sketch First
+	sercon, _ := connectWithBootloader(device)
+	sketch, err := arduboy.ReadSketch(sercon)
+	fatalIfErr(device, "read sketch", err)
+	hash := arduboy.Md5String(sketch)
+	if filename == "" {
+		filename = fmt.Sprintf("%s_%s.hex", hash, FileSafeDateTime())
+	}
+	result := make(map[string]interface{})
+	result["Filename"] = filename
+	result["MD5"] = hash
+	PrintJson(result)
 }
 
 func main() {
@@ -39,6 +65,18 @@ func main() {
 			"You can use 'any' in place of any [port] argument to connect to the first arduboy found",
 		Version: "0.1.0",
 		Authors: []any{"haloopdy"},
+		Flags: []cli.Flag{
+			&cli.StringFlag{
+				Name:    "outfile",
+				Aliases: []string{"o"},
+				Usage:   "Save to `FILE`",
+			},
+			&cli.StringFlag{
+				Name:    "infile",
+				Aliases: []string{"i"},
+				Usage:   "Read from `FILE`",
+			},
+		},
 		Commands: []*cli.Command{
 			{
 				Name: "scan",
@@ -65,6 +103,24 @@ func main() {
 				Action: func(ctx context.Context, cmd *cli.Command) error {
 					queryAction(cmd.Args().First())
 					return nil
+				},
+			},
+			{
+				Name:  "sketch",
+				Usage: "Commands for working with arduboy sketches",
+				Commands: []*cli.Command{
+					{
+						Name:  "read",
+						Usage: "read the sketch as-is from the arduboy as a .hex file",
+						Description: "Connect to the given device and read the entire sketch contained within the " +
+							"flash memory. A default filename is chosen if none is provided, otherwise you can do -o <filename>. " +
+							"Files are written as .hex, which is the universal format tools expect to write back to arduboy",
+						ArgsUsage: "[port]",
+						Action: func(ctx context.Context, cmd *cli.Command) error {
+							sketchReadAction(cmd.Args().First(), cmd.String("outfile"))
+							return nil
+						},
+					},
 				},
 			},
 			//{

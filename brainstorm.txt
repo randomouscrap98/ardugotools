@@ -13,3 +13,21 @@
 
 Now that we have the thing outputting a list:
 - Need the cli argument parser thing.
+
+
+Let's at least get sketch reading done:
+- Simple CLI can be made into something more complex with scripting, don't let the
+  system get too complicated
+- Sketch read is simple: just read the data and output to a file. The CLI should
+  perhaps output data relevant to the sketch. 
+  - Sketch read should always just read the sketch, but there may be a DIFFERENT
+    command to read more, and output a hex
+  - consider that some output may be suitable for writing to a pipe (such as the 
+    sketch as a .hex) but others won't be (.arduboy as zip)
+  - default filename is generated but can be overridden. because of this, what 
+    do we return from the call? more json, probably, to make it consistent.
+  - want the filename at the very least. Some information maybe? At least get the 
+    filename and other things can come later (md5? are we working that into the filename?)
+  - md5 in filename means that if you dump multiple times, it will be fine. 
+    - seconds in filename isn't enough, but don't want to make the filename too long.
+      md5 is 32 chars 
