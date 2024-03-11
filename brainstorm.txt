@@ -30,4 +30,8 @@ Let's at least get sketch reading done:
     filename and other things can come later (md5? are we working that into the filename?)
   - md5 in filename means that if you dump multiple times, it will be fine. 
     - seconds in filename isn't enough, but don't want to make the filename too long.
-      md5 is 32 chars 
+      md5 is 32 chars , that's already too long. 
+    - What do people want? perhaps a filename should just be required... no, that sucks
+    - 692c8a0cc5e7feb278d7702262577ba4_20240310-2110.hex
+      is that ridiculous? mmmm... maybe? hash will at least let you know which program it isn
+
