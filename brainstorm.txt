@@ -35,3 +35,33 @@ Let's at least get sketch reading done:
     - 692c8a0cc5e7feb278d7702262577ba4_20240310-2110.hex
       is that ridiculous? mmmm... maybe? hash will at least let you know which program it isn
 
+
+- Don't want to do the sketch write until the flashcart scanning is implemented, so 
+  we can be safe when writing the dev data (don't want to overwrite the end of the flashcart)
+  - Sometimes the JEDEC doesn't include the flashcart size (apparently), so the user will need 
+    to supply that 
+- Parse and generate flashcart header
+- Scan flashcart (on device), parse, and let users... do what? One thing is to read the whole
+  flashcart, which shouldn't be too much of a problem. Another is to just get headers to find
+  a certain program, or to parse all headers. Some will want to read the image too. If we pass
+  a function, how will it be able to read the various parts it needs to?
+  - Interface for reading arbitrary sections from flash? Possible, I guess. 
+  - Just have a couple different functions and make the user figure out what to do in memory?
+    Could be fine; headers are only 256 bytes, probably at most 256k. But with images...
+    flash memory is at most 16mb now, but in the future it will be 500mb or something. 
+    Can't store the whole thing, will need to stream. 
+  - Streaming interface... how? Generator. Functions to read parts?
+
+- Absolute need to solve the flashcart reading problem:
+  - Can scan through flashcart, reading only one page at a time, and returning the headers.
+    Using the headers, you can read further data as long as there's functions to read blocks
+    from the flashcart. 
+    - There shouldn't be any waste other than repeating commands more than needed, since 
+      everything is aligned to a page and I think flashcart read commands are all page based
+  - ReadFlash(page, amount)
+  - ReadhFlashcart(page, amount)
+    - Usually don't need to read arbitrary data from flash, so only the flashcart is really 
+      necessary. Can maybe have wrapper functions to read images and the game itself or 
+      flashcart data/save but mmm... only if necessary
+
+

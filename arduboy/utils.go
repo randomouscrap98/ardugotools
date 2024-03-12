@@ -1,7 +1,9 @@
 package arduboy
 
 import (
+	"bytes"
 	"crypto/md5"
+	"encoding/binary"
 	"encoding/hex"
 	"io"
 )
@@ -58,4 +60,30 @@ func (fhf *FunnyHexFixer) Write(data []byte) (int, error) {
 		}
 	}
 	return len(data), nil
+}
+
+// Read a 2 byte value in the middle of data
+func Get2ByteValue(data []byte, index int) uint16 {
+	return binary.BigEndian.Uint16(data[index : index+2])
+}
+
+// Write a 2 byte value directly into the middle of data
+func Write2ByteValue(value uint16, data []byte, index int) {
+	data[index] = byte(value >> 8)
+	data[index+1] = byte(value & 0xFF)
+}
+
+// Parse as many null-terminated strings as possible out of
+// the data. Useful for the header "metadata"
+func ParseStringArray(data []byte) []string {
+	result := make([]string, 0)
+	for len(data) > 0 {
+		next := bytes.IndexByte(data, 0)
+		if next == -1 {
+			break
+		}
+		result = append(result, string(data[:next]))
+		data = data[next+1:]
+	}
+	return result
 }

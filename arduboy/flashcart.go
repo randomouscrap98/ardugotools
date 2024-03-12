@@ -1,10 +1,12 @@
 package arduboy
 
-import ()
+import (
+	"bytes"
+	"fmt"
+)
 
 const (
 	FxHeaderStartString = "ARDUBOY"
-	// HeaderStartBytes = bytearray(HEADER_START_STRING.encode())
 
 	FxHeaderLength      = 256                                         // The flashcart slot header length in bytes
 	FxHeaderMetaSize    = 199                                         // Length of the metadata section
@@ -46,9 +48,70 @@ type FxHeader struct {
 	Info      string
 }
 
+func FxHeaderStartBytes() []byte {
+	return []byte(FxHeaderStartString)
+}
+
 // Generate the bytes you can write to the flashcart
 func (header *FxHeader) MakeHeader() [FxHeaderLength]byte {
 	var result [FxHeaderLength]byte
 
 	return result
+}
+
+type NotEnoughDataError struct {
+	Expected int
+	Found    int
+}
+
+func (m *NotEnoughDataError) Error() string {
+	return fmt.Sprintf("Not enough data: expected %d, got %d", m.Expected, m.Found)
+}
+
+type NotHeaderError struct{}
+
+func (m *NotHeaderError) Error() string {
+	return fmt.Sprintf("Data contains no header")
+}
+
+// Parse the header out of a byte slice. Will throw an error
+// on slice too small or on header "not a header"
+func ParseHeader(data []byte) (*FxHeader, error) {
+	if len(data) < FxHeaderLength {
+		return nil, &NotEnoughDataError{Expected: FxHeaderLength, Found: len(data)}
+	}
+	headerBytes := FxHeaderStartBytes()
+	if !bytes.HasPrefix(data, headerBytes) {
+		return nil, &NotHeaderError{}
+	}
+	result := FxHeader{
+		Category:     data[FxHeaderCategoryIndex],
+		PreviousPage: Get2ByteValue(data, FxHeaderPreviousPageIndex),
+		NextPage:     Get2ByteValue(data, FxHeaderNextPageIndex),
+		SlotPages:    Get2ByteValue(data, FxHeaderSlotSizeIndex),
+		ProgramPages: data[FxHeaderProgramSizeIndex],
+		ProgramStart: Get2ByteValue(data, FxHeaderProgramPageIndex),
+		DataStart:    Get2ByteValue(data, FxHeaderDataPageIndex),
+		DataPages:    Get2ByteValue(data, FxHeaderDataSizeIndex),
+	}
+
+	metaStrings := ParseStringArray(data[FxHeaderMetaIndex:FxHeaderLength])
+	mlen := len(metaStrings)
+	for i := mlen; i < 4; i++ {
+		metaStrings = append(metaStrings, "")
+	}
+
+	if result.SlotPages == 0xFFFF {
+		// This is a category, it has special needs
+		result.Title = metaStrings[0]
+		result.Info = metaStrings[1]
+	} else {
+		// This is a regular slot, try to get all the fields
+		result.Title = metaStrings[0]
+		result.Version = metaStrings[1]
+		result.Developer = metaStrings[2]
+		result.Info = metaStrings[3]
+	}
+
+	return &result, nil
 }
