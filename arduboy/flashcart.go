@@ -2,6 +2,7 @@ package arduboy
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 )
 
@@ -27,6 +28,8 @@ const (
 	FxHeaderDataPageIndex     = 17 // "" starting page of data (2 bytes)
 	FxHeaderSavePageIndex     = 19 // "" starting page of save (2 bytes)
 	FxHeaderDataSizeIndex     = 21 // "" data segment size (2 bytes, factor of 256)
+	FxHeaderHashIndex         = 25 // "" hash (32 bytes)
+	FxHeaderHashLength        = 32
 	FxHeaderMetaIndex         = 57 // "" metadata
 )
 
@@ -41,6 +44,8 @@ type FxHeader struct {
 	DataStart    uint16
 	SaveStart    uint16
 	DataPages    uint16
+
+	Sha256 string
 
 	// Metadata
 	Title     string
@@ -100,6 +105,7 @@ func ParseHeader(data []byte) (*FxHeader, []byte, error) {
 		DataStart:    Get2ByteValue(data, FxHeaderDataPageIndex),
 		SaveStart:    Get2ByteValue(data, FxHeaderSavePageIndex),
 		DataPages:    Get2ByteValue(data, FxHeaderDataSizeIndex),
+		Sha256:       hex.EncodeToString(data[FxHeaderHashIndex : FxHeaderHashIndex+FxHeaderHashLength]),
 	}
 
 	metaStrings := ParseStringArray(data[FxHeaderMetaIndex:FxHeaderLength])
