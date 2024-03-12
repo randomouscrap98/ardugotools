@@ -2,6 +2,7 @@ package arduboy
 
 import (
 	"bytes"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
@@ -96,7 +97,7 @@ var VidPidTable = map[string]BasicBoardInfo{
 }
 
 type JedecInfo struct {
-	ID           [3]byte
+	ID           string
 	Capacity     int32
 	Manufacturer string
 }
@@ -284,30 +285,32 @@ func (info *BootloaderInfo) GetJedecInfo(sercon io.ReadWriter) (*JedecInfo, erro
 		return nil, nil
 	}
 
-	var result JedecInfo
 	rwep := ReadWriteErrorPass{rw: sercon}
-	var jedecId2 [3]byte
+	var jedecId1, jedecId2 [3]byte
 
 	rwep.WritePass([]byte("j"))
-	rwep.ReadPass(result.ID[:])
+	rwep.ReadPass(jedecId1[:])
 	time.Sleep(JedecVerifyWait)
 	rwep.WritePass([]byte("j"))
 	rwep.ReadPass(jedecId2[:])
 
-	if !bytes.Equal(result.ID[:], jedecId2[:]) {
+	if !bytes.Equal(jedecId1[:], jedecId2[:]) {
 		log.Printf("Jedec version producing garbage data, assuming no flashcart!\n")
 		return nil, rwep.err
 	}
-	if bytes.Equal(result.ID[:], []byte{0, 0, 0}) || bytes.Equal(result.ID[:], []byte{0xFF, 0xFF, 0xFF}) {
+	if bytes.Equal(jedecId1[:], []byte{0, 0, 0}) || bytes.Equal(jedecId1[:], []byte{0xFF, 0xFF, 0xFF}) {
 		log.Printf("Jedec version invalid, assuming no flashcart!\n")
 		return nil, rwep.err
 	}
-	if val, ok := JedecManufacturerKeys[int(result.ID[0])]; ok {
+	result := JedecInfo{
+		Capacity: 1 << jedecId1[2],
+		ID:       hex.EncodeToString(jedecId1[:]),
+	}
+	if val, ok := JedecManufacturerKeys[int(jedecId1[0])]; ok {
 		result.Manufacturer = val
 	} else {
 		result.Manufacturer = ""
 	}
-	result.Capacity = 1 << result.ID[2]
 	return &result, rwep.err
 }
 

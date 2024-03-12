@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"fmt"
+	"log"
 )
 
 const (
@@ -33,6 +34,10 @@ const (
 	FxHeaderMetaIndex         = 57 // "" metadata
 )
 
+func FxHeaderStartBytes() []byte {
+	return []byte(FxHeaderStartString)
+}
+
 // All data in the header of an fx slot (JUST the header, not the image)
 type FxHeader struct {
 	Category     uint8
@@ -58,15 +63,54 @@ func (h *FxHeader) IsCategory() bool {
 	return h.ProgramStart == 0xFFFF
 }
 
-func FxHeaderStartBytes() []byte {
-	return []byte(FxHeaderStartString)
-}
-
 // Generate the bytes you can write to the flashcart
-func (header *FxHeader) MakeHeader() [FxHeaderLength]byte {
-	var result [FxHeaderLength]byte
+func (header *FxHeader) MakeHeader() ([]byte, error) {
+	result := make([]byte, FxHeaderLength)
+	for i := range result {
+		result[i] = 0xFF
+	}
 
-	return result
+	// Copy the header start bytes
+	copy(result[:], FxHeaderStartBytes())
+
+	// Write the normal-ish values
+	result[FxHeaderCategoryIndex] = header.Category
+	Write2ByteValue(header.PreviousPage, result, FxHeaderPreviousPageIndex)
+	Write2ByteValue(header.NextPage, result, FxHeaderNextPageIndex)
+	Write2ByteValue(header.SlotPages, result, FxHeaderSlotSizeIndex)
+	result[FxHeaderProgramSizeIndex] = header.ProgramPages
+	Write2ByteValue(header.ProgramStart, result, FxHeaderProgramPageIndex)
+	Write2ByteValue(header.DataStart, result, FxHeaderDataPageIndex)
+	Write2ByteValue(header.SaveStart, result, FxHeaderSavePageIndex)
+	Write2ByteValue(header.DataPages, result, FxHeaderDataSizeIndex)
+
+	// Write the ugly hash (it's a hex string)
+	hash, err := hex.DecodeString(header.Sha256)
+	if err != nil {
+		return nil, err
+	}
+	copy(result[FxHeaderHashIndex:FxHeaderHashIndex+FxHeaderHashLength], hash)
+
+	// And now the metadata
+	metastrings := make([]string, 0)
+
+	if header.IsCategory() {
+		metastrings = append(metastrings, header.Title)
+		metastrings = append(metastrings, header.Info)
+	} else {
+		metastrings = append(metastrings, header.Title)
+		metastrings = append(metastrings, header.Version)
+		metastrings = append(metastrings, header.Developer)
+		metastrings = append(metastrings, header.Info)
+	}
+
+	// Write the stupid metadata
+	stop, trunc := FillStringArray(metastrings, result[FxHeaderMetaIndex:FxHeaderMetaIndex+FxHeaderMetaSize])
+	if stop != len(metastrings) || trunc != 0 {
+		log.Printf("Couldn't write all metastrings: stopped on string [%d], truncated %d", stop, trunc)
+	}
+
+	return result, nil
 }
 
 type NotEnoughDataError struct {

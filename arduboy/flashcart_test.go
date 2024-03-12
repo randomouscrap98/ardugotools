@@ -3,6 +3,7 @@ package arduboy
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -153,4 +154,24 @@ func TestParseHeader_NoHeader(t *testing.T) {
 	default:
 		t.Errorf("Expected 'NotHeaderError', got %s", v)
 	}
+}
+
+func testHeaderTransparent_Any(t *testing.T, filename string) {
+	data := readTestfile(filename)
+	header := stdHeaderParse(t, data)
+	data2, err := header.MakeHeader()
+	if err != nil {
+		t.Errorf("MakeHeader threw an error (%s)", filename)
+	}
+	if !reflect.DeepEqual(data, data2) {
+		t.Errorf("MakeHeader not transparent with ParseHeader (%s)", filename)
+	}
+}
+
+func TestHeaderTransparent_Category(t *testing.T) {
+	testHeaderTransparent_Any(t, "header_category.bin")
+}
+
+func TestHeaderTransparent_Game(t *testing.T) {
+	testHeaderTransparent_Any(t, "header_game.bin")
 }

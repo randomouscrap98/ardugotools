@@ -87,3 +87,28 @@ func ParseStringArray(data []byte) []string {
 	}
 	return result
 }
+
+// Fill the given data byte buffer with as much of the strings contained within
+// the strings parameter. Returns the total amount of strings written and the
+// amount truncated from the last written string
+func FillStringArray(strings []string, data []byte) (int, int) {
+	for i, s := range strings {
+		// Copy the full strings (or as much as it can) into the remaining data section.
+		slen := copy(data, s)
+		dnext := slen
+		if dnext < len(data) {
+			// Add the null terminator if there's room
+			data[dnext] = 0
+			dnext++
+		}
+		if dnext < len(data) {
+			// Move to the next string if there's room (including the null terminator)
+			data = data[dnext:]
+		} else {
+			// We ran out of room on this given string
+			return i + 1, len(s) - slen
+		}
+	}
+	// We were able to write everything
+	return len(strings), 0
+}
