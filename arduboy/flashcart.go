@@ -39,6 +39,7 @@ type FxHeader struct {
 	ProgramPages uint8
 	ProgramStart uint16
 	DataStart    uint16
+	SaveStart    uint16
 	DataPages    uint16
 
 	// Metadata
@@ -46,6 +47,10 @@ type FxHeader struct {
 	Version   string
 	Developer string
 	Info      string
+}
+
+func (h *FxHeader) IsCategory() bool {
+	return h.ProgramStart == 0xFFFF
 }
 
 func FxHeaderStartBytes() []byte {
@@ -75,14 +80,15 @@ func (m *NotHeaderError) Error() string {
 }
 
 // Parse the header out of a byte slice. Will throw an error
-// on slice too small or on header "not a header"
-func ParseHeader(data []byte) (*FxHeader, error) {
+// on slice too small or on header "not a header". Byte array returned
+// is the slice without the header anymore
+func ParseHeader(data []byte) (*FxHeader, []byte, error) {
 	if len(data) < FxHeaderLength {
-		return nil, &NotEnoughDataError{Expected: FxHeaderLength, Found: len(data)}
+		return nil, nil, &NotEnoughDataError{Expected: FxHeaderLength, Found: len(data)}
 	}
 	headerBytes := FxHeaderStartBytes()
 	if !bytes.HasPrefix(data, headerBytes) {
-		return nil, &NotHeaderError{}
+		return nil, nil, &NotHeaderError{}
 	}
 	result := FxHeader{
 		Category:     data[FxHeaderCategoryIndex],
@@ -92,6 +98,7 @@ func ParseHeader(data []byte) (*FxHeader, error) {
 		ProgramPages: data[FxHeaderProgramSizeIndex],
 		ProgramStart: Get2ByteValue(data, FxHeaderProgramPageIndex),
 		DataStart:    Get2ByteValue(data, FxHeaderDataPageIndex),
+		SaveStart:    Get2ByteValue(data, FxHeaderSavePageIndex),
 		DataPages:    Get2ByteValue(data, FxHeaderDataSizeIndex),
 	}
 
@@ -101,7 +108,7 @@ func ParseHeader(data []byte) (*FxHeader, error) {
 		metaStrings = append(metaStrings, "")
 	}
 
-	if result.SlotPages == 0xFFFF {
+	if result.IsCategory() {
 		// This is a category, it has special needs
 		result.Title = metaStrings[0]
 		result.Info = metaStrings[1]
@@ -113,5 +120,5 @@ func ParseHeader(data []byte) (*FxHeader, error) {
 		result.Info = metaStrings[3]
 	}
 
-	return &result, nil
+	return &result, data[FxHeaderLength:], nil
 }

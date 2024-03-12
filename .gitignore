@@ -6,6 +6,8 @@ ardugotools
 *.bin
 *.arduboy
 ignore/
+adhoc/found_chunks/
+adhoc/adhoc
 
 # A special softlink in my directory for testing purposes
 adbpy
