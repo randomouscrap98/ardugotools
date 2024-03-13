@@ -266,46 +266,62 @@ type HeaderCategory struct {
 // Scrape just the metadata out of the flashcart. Optionally pull images (much slower)
 func ScanFlashcartMeta(sercon io.ReadWriter, getImages bool) ([]HeaderCategory, error) {
 	result := make([]HeaderCategory, 0)
+	errchan := make(chan error)
 	//var imgbytes [ScreenBytes]byte
 	//var outbytes [GrayscaleScreenBytes]byte
 	scanFunc := func(con io.ReadWriter, header *FxHeader, addr int, headers int) error {
-		img := ""
+		select {
+		case err := <-errchan:
+			if err != nil {
+				return err
+			}
+		default:
+		}
+		var writeimg *string
+		if header.IsCategory() {
+			result = append(result, HeaderCategory{
+				Title: header.Title,
+				Info:  header.Info,
+				//Image: img,
+				Slots: make([]*HeaderProgram, 0),
+			})
+			writeimg = &result[len(result)-1].Image
+		} else {
+			last := len(result) - 1
+			if last < 0 {
+				return errors.New("Invalid flashcart: did not start with a category!")
+			}
+			newProgram := &HeaderProgram{
+				Title:     header.Title,
+				Version:   header.Version,
+				Developer: header.Developer,
+				Info:      header.Info,
+				Sha256:    header.Sha256,
+				TotalSize: int(header.SlotPages) * FXPageSize,
+			}
+			result[last].Slots = append(result[last].Slots, newProgram)
+			writeimg = &newProgram.Image
+		}
+		//img := ""
 		if getImages {
 			//err := ReadFlashcartInto(con, uint16(addr/FXPageSize+1), imgbytes[:])
 			imgbytes, err := ReadFlashcart(con, uint16(addr/FXPageSize+1), uint16(ScreenBytes))
 			if err != nil {
 				return err
 			}
-
-			RawToGrayscaleInto(imgbytes[:], outbytes[:], 0, 255)
-			pngraw, err := GrayscaleToPng(outbytes[:])
-			if err != nil {
-				return err
-			}
-			img = "data:image/png;base64," + base64.StdEncoding.EncodeToString(pngraw)
+			go func() {
+				//RawToGrayscaleInto(imgbytes[:], outbytes[:], 0, 255)
+				outbytes := RawToGrayscale(imgbytes, 0, 255)
+				pngraw, err := GrayscaleToPng(outbytes)
+				if err != nil {
+					errchan <- err
+					//return err
+				} else {
+					*writeimg = "data:image/png;base64," + base64.StdEncoding.EncodeToString(pngraw)
+					errchan <- nil
+				}
+			}()
 			//img = base64.StdEncoding.EncodeToString(imgbytes[:])
-		}
-		if header.IsCategory() {
-			result = append(result, HeaderCategory{
-				Title: header.Title,
-				Info:  header.Info,
-				Image: img,
-				Slots: make([]*HeaderProgram, 0),
-			})
-		} else {
-			last := len(result) - 1
-			if last < 0 {
-				return errors.New("Invalid flashcart: did not start with a category!")
-			}
-			result[last].Slots = append(result[last].Slots, &HeaderProgram{
-				Title:     header.Title,
-				Version:   header.Version,
-				Developer: header.Developer,
-				Info:      header.Info,
-				Sha256:    header.Sha256,
-				Image:     img,
-				TotalSize: int(header.SlotPages) * FXPageSize,
-			})
 		}
 		return nil
 	}
@@ -314,5 +330,15 @@ func ScanFlashcartMeta(sercon io.ReadWriter, getImages bool) ([]HeaderCategory, 
 		flashRate = 16
 	}
 	_, _, err := ScanFlashcart(sercon, scanFunc, flashRate, LEDCtrlBlOn|LEDCtrlRdOn)
-	return result, err
+	if err != nil {
+		return nil, err
+	}
+
+	// No error? There should be at least one more item in errchan
+	err = <-errchan
+	if err != nil {
+		return nil, err
+	}
+
+	return result, nil
 }
