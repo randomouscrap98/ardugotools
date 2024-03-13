@@ -90,13 +90,14 @@ func (c *SketchReadCmd) Run() error {
 // Flashcart scan command
 type FlashcartScanCmd struct {
 	Device string `arg:"" help:"The system device to read from (use 'any' for first)"`
-	Html   bool   `help:"Generate as html instead (will read images)"`
+	Html   bool   `help:"Generate as html instead"`
+	Images bool   `help:"Pull images (takes 4 times as long)"`
 }
 
 func (c *FlashcartScanCmd) Run() error {
 	sercon, d := connectWithBootloader(c.Device)
 	mustHaveFlashcart(sercon, d)
-	result, err := arduboy.ScanFlashcartBasic(sercon)
+	result, err := arduboy.ScanFlashcartMeta(sercon, c.Images)
 	fatalIfErr(c.Device, "scan flashcart (basic)", err)
 	PrintJson(result)
 	return nil

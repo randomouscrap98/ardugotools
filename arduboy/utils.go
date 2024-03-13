@@ -76,28 +76,6 @@ func ResetRgbButtonState(sercon io.ReadWriter) error {
 	// rwep.WritePass(RgbButtonCommandRaw(LEDCtrlRGB))
 }
 
-//type RgbButtonControl struct {
-//  NoButtons bool
-//  LEDRX bool
-//  LEDTX bool
-//  LEDRed bool
-//  LEDGreen bool
-//  LEDBlue bool
-//}
-
-// func(control *RgbButtonControl) ToCommand() []byte {
-//   var bits uint8
-//   if control.NoButtons {
-//     bits |= 0x80
-//   }
-//   if control.LEDRX || control.LEDTX {
-//     bits |= 0x20
-//     if control.LEDRX {
-//       bits |=
-//   }
-//   return []byte{byte('x'), bits}
-// }
-
 // Remove unused sections from the end of the byte array. In these files, sections
 // of 0xFF represent unused data.
 func TrimUnused(data []byte, blocksize int) []byte {

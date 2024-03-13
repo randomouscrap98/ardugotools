@@ -282,6 +282,7 @@ func GetBootloaderInfo(sercon io.ReadWriter) (*BootloaderInfo, error) {
 
 // Ask device for JEDEC info.
 // NOTE: this function will block for some time (500ms?) while it verifies the jedec ID!
+// (if you ask for it).
 func (info *BootloaderInfo) GetJedecInfo(sercon io.ReadWriter, verify bool) (*JedecInfo, error) {
 	if info.Version < MinBootloaderWithFlash {
 		log.Printf("Bootloader version too low for flashcart support! Need: %d, have: %d\n",
@@ -290,12 +291,13 @@ func (info *BootloaderInfo) GetJedecInfo(sercon io.ReadWriter, verify bool) (*Je
 	}
 
 	rwep := ReadWriteErrorPass{rw: sercon}
-	var jedecId1, jedecId2 [3]byte
+	var jedecId1 [3]byte
 
 	rwep.WritePass([]byte("j"))
 	rwep.ReadPass(jedecId1[:])
 
 	if verify {
+		var jedecId2 [3]byte
 		time.Sleep(JedecVerifyWait)
 		rwep.WritePass([]byte("j"))
 		rwep.ReadPass(jedecId2[:])

@@ -2,6 +2,7 @@ package arduboy
 
 import (
 	"bytes"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -252,21 +253,33 @@ type HeaderProgram struct {
 	Info      string
 	Sha256    string
 	TotalSize int
+	Image     string
 }
 
 type HeaderCategory struct {
 	Title string
 	Info  string
+	Image string
 	Slots []*HeaderProgram
 }
 
-func ScanFlashcartBasic(sercon io.ReadWriter) ([]HeaderCategory, error) {
+func ScanFlashcartMeta(sercon io.ReadWriter, getImages bool) ([]HeaderCategory, error) {
 	result := make([]HeaderCategory, 0) //make(map[string][]*FxHeader)
+	var imgbytes [ScreenBytes]byte
 	scanFunc := func(con io.ReadWriter, header *FxHeader, addr int, headers int) error {
+		img := ""
+		if getImages {
+			err := ReadFlashcartInto(con, uint16(addr/FXPageSize+1), imgbytes[:])
+			if err != nil {
+				return err
+			}
+			img = base64.StdEncoding.EncodeToString(imgbytes[:])
+		}
 		if header.IsCategory() {
 			result = append(result, HeaderCategory{
 				Title: header.Title,
 				Info:  header.Info,
+				Image: img,
 				Slots: make([]*HeaderProgram, 0),
 			})
 		} else {
@@ -280,6 +293,7 @@ func ScanFlashcartBasic(sercon io.ReadWriter) ([]HeaderCategory, error) {
 				Developer: header.Developer,
 				Info:      header.Info,
 				Sha256:    header.Sha256,
+				Image:     img,
 				TotalSize: int(header.SlotPages) * FXPageSize,
 			})
 		}
