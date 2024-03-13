@@ -263,17 +263,27 @@ type HeaderCategory struct {
 	Slots []*HeaderProgram
 }
 
+// Scrape just the metadata out of the flashcart. Optionally pull images (much slower)
 func ScanFlashcartMeta(sercon io.ReadWriter, getImages bool) ([]HeaderCategory, error) {
-	result := make([]HeaderCategory, 0) //make(map[string][]*FxHeader)
-	var imgbytes [ScreenBytes]byte
+	result := make([]HeaderCategory, 0)
+	//var imgbytes [ScreenBytes]byte
+	//var outbytes [GrayscaleScreenBytes]byte
 	scanFunc := func(con io.ReadWriter, header *FxHeader, addr int, headers int) error {
 		img := ""
 		if getImages {
-			err := ReadFlashcartInto(con, uint16(addr/FXPageSize+1), imgbytes[:])
+			//err := ReadFlashcartInto(con, uint16(addr/FXPageSize+1), imgbytes[:])
+			imgbytes, err := ReadFlashcart(con, uint16(addr/FXPageSize+1), uint16(ScreenBytes))
 			if err != nil {
 				return err
 			}
-			img = base64.StdEncoding.EncodeToString(imgbytes[:])
+
+			RawToGrayscaleInto(imgbytes[:], outbytes[:], 0, 255)
+			pngraw, err := GrayscaleToPng(outbytes[:])
+			if err != nil {
+				return err
+			}
+			img = "data:image/png;base64," + base64.StdEncoding.EncodeToString(pngraw)
+			//img = base64.StdEncoding.EncodeToString(imgbytes[:])
 		}
 		if header.IsCategory() {
 			result = append(result, HeaderCategory{
@@ -299,6 +309,10 @@ func ScanFlashcartMeta(sercon io.ReadWriter, getImages bool) ([]HeaderCategory, 
 		}
 		return nil
 	}
-	_, _, err := ScanFlashcart(sercon, scanFunc, 64, LEDCtrlBlOn|LEDCtrlRdOn)
+	flashRate := 64
+	if getImages {
+		flashRate = 16
+	}
+	_, _, err := ScanFlashcart(sercon, scanFunc, flashRate, LEDCtrlBlOn|LEDCtrlRdOn)
 	return result, err
 }
