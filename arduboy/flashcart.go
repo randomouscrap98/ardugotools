@@ -267,9 +267,8 @@ type HeaderCategory struct {
 func ScanFlashcartMeta(sercon io.ReadWriter, getImages bool) ([]HeaderCategory, error) {
 	result := make([]HeaderCategory, 0)
 	errchan := make(chan error)
-	//var imgbytes [ScreenBytes]byte
-	//var outbytes [GrayscaleScreenBytes]byte
 	scanFunc := func(con io.ReadWriter, header *FxHeader, addr int, headers int) error {
+		// Dump the errors and quit the reader as soon as possible
 		select {
 		case err := <-errchan:
 			if err != nil {
@@ -277,12 +276,13 @@ func ScanFlashcartMeta(sercon io.ReadWriter, getImages bool) ([]HeaderCategory, 
 			}
 		default:
 		}
+		// Where to eventually write the completed image (goroutine)
 		var writeimg *string
+		// Figure out which kind of thing to write to result (some are categories, some are programs)
 		if header.IsCategory() {
 			result = append(result, HeaderCategory{
 				Title: header.Title,
 				Info:  header.Info,
-				//Image: img,
 				Slots: make([]*HeaderProgram, 0),
 			})
 			writeimg = &result[len(result)-1].Image
@@ -302,42 +302,50 @@ func ScanFlashcartMeta(sercon io.ReadWriter, getImages bool) ([]HeaderCategory, 
 			result[last].Slots = append(result[last].Slots, newProgram)
 			writeimg = &newProgram.Image
 		}
-		//img := ""
+		// Pull images. The first part MUST be done synchronously, but the image conversion
+		// can be run at any time
 		if getImages {
-			//err := ReadFlashcartInto(con, uint16(addr/FXPageSize+1), imgbytes[:])
 			imgbytes, err := ReadFlashcart(con, uint16(addr/FXPageSize+1), uint16(ScreenBytes))
 			if err != nil {
 				return err
 			}
 			go func() {
-				//RawToGrayscaleInto(imgbytes[:], outbytes[:], 0, 255)
 				outbytes := RawToGrayscale(imgbytes, 0, 255)
 				pngraw, err := GrayscaleToPng(outbytes)
 				if err != nil {
 					errchan <- err
-					//return err
 				} else {
 					*writeimg = "data:image/png;base64," + base64.StdEncoding.EncodeToString(pngraw)
 					errchan <- nil
 				}
 			}()
-			//img = base64.StdEncoding.EncodeToString(imgbytes[:])
 		}
 		return nil
 	}
+
+	// Reading images is much slower, so the flash rate should speed up to match
 	flashRate := 64
 	if getImages {
 		flashRate = 16
 	}
+
+	// Do the full flashcart scan, BUT the images might not be finished converting!
 	_, _, err := ScanFlashcart(sercon, scanFunc, flashRate, LEDCtrlBlOn|LEDCtrlRdOn)
 	if err != nil {
 		return nil, err
 	}
 
-	// No error? There should be at least one more item in errchan
-	err = <-errchan
-	if err != nil {
-		return nil, err
+	// No error? Dump the errchan to be sure
+ErrorDump:
+	for {
+		select {
+		case err = <-errchan:
+			if err != nil {
+				return nil, err
+			}
+		default:
+			break ErrorDump
+		}
 	}
 
 	return result, nil
