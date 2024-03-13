@@ -3,6 +3,7 @@ package arduboy
 import (
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -206,6 +207,7 @@ func ScanFlashcart(sercon io.ReadWriter, headerFunc func(io.ReadWriter, *FxHeade
 	defer ResetRgbButtonState(sercon)
 
 	for {
+		// Fancy led strobing
 		if flashRate > 0 {
 			thisState = LEDCtrlBtnOff | (flashColor * byte((headerCount/flashRate)&1))
 		}
@@ -219,6 +221,8 @@ func ScanFlashcart(sercon io.ReadWriter, headerFunc func(io.ReadWriter, *FxHeade
 		if err != nil {
 			return 0, 0, err
 		}
+
+		// Parse the header. It might throw an "acceptable" error.
 		header, _, err := ParseHeader(headerRaw[:])
 		if err != nil {
 			switch err.(type) {
@@ -228,63 +232,59 @@ func ScanFlashcart(sercon io.ReadWriter, headerFunc func(io.ReadWriter, *FxHeade
 				return 0, 0, err
 			}
 		}
+
+		// Call the user's function with the current state as we know it
 		err = headerFunc(sercon, header, headerAddr, headerCount)
 		if err != nil {
 			return 0, 0, err
 		}
+
+		// Move to the next header
 		headerCount++
 		headerAddr += int(header.SlotPages) * FXPageSize
 	}
 }
 
-// def scan_fx(s_port, header_work = None, report_progress = None):
-//     """
-//     Scan through the device's FX flash memory, calling the given function for
-//     every read header. Continues until header_work returns false, or the end
-//     of the cart is reached. The size of the flashcart is returned.
-//     """
-//
-//     ## detect flash cart ##
-//     jedec_info = get_and_verify_jdec_bootloader(s_port)
-//
-//     header_addr = 0     # The actual current byte address
-//     slots = 0           # The number of slots
-//
-//     # We don't know when we'll reach the end of the cart, we have to parse the headers
-//     while True:
-//         if (slots // 64) & 1:
-//             s_port.write(b"x\xC0") #RGB BLUE OFF, buttons disabled
-//         else:
-//             s_port.write(b"x\xC1") #RGB BLUE RED, buttons disabled
-//         s_port.read(1)
-//
-//         # Read just the header bytes
-//         blockaddr = header_addr // FX_PAGESIZE
-//         readlen = arduboy.fxcart.HEADER_LENGTH
-//         s_port.write(bytearray([ord("A"), blockaddr >> 8, blockaddr & 0xFF]))
-//         s_port.read(1)
-//         s_port.write(bytearray([ord("g"), (readlen >> 8) & 0xFF, readlen & 0xFF, ord("C")]))
-//
-//         header = s_port.read(readlen)
-//
-//         # This chunk of flash indicates the end of the cart, because it was not a header!
-//         if not arduboy.fxcart.is_slot(header, 0):
-//             break
-//
-//         slots += 1
-//
-//         # Or if the user tells us to stop, we do.
-//         if header_work:
-//             if not header_work(header, header_addr):
-//                 break
-//
-//         # Move to the next apparent slot
-//         header_addr += arduboy.fxcart.get_slot_size_bytes(header, 0)
-//
-//         if report_progress:
-//             report_progress(header_addr, jedec_info.capacity)
-//
-//     s_port.write(b"x\x40")#RGB LED off, buttons enabled
-//     s_port.read(1)
-//
-//     return header_addr, slots
+type HeaderProgram struct {
+	Title     string
+	Version   string
+	Developer string
+	Info      string
+	Sha256    string
+	TotalSize int
+}
+
+type HeaderCategory struct {
+	Title string
+	Info  string
+	Slots []*HeaderProgram
+}
+
+func ScanFlashcartBasic(sercon io.ReadWriter) ([]HeaderCategory, error) {
+	result := make([]HeaderCategory, 0) //make(map[string][]*FxHeader)
+	scanFunc := func(con io.ReadWriter, header *FxHeader, addr int, headers int) error {
+		if header.IsCategory() {
+			result = append(result, HeaderCategory{
+				Title: header.Title,
+				Info:  header.Info,
+				Slots: make([]*HeaderProgram, 0),
+			})
+		} else {
+			last := len(result) - 1
+			if last < 0 {
+				return errors.New("Invalid flashcart: did not start with a category!")
+			}
+			result[last].Slots = append(result[last].Slots, &HeaderProgram{
+				Title:     header.Title,
+				Version:   header.Version,
+				Developer: header.Developer,
+				Info:      header.Info,
+				Sha256:    header.Sha256,
+				TotalSize: int(header.SlotPages) * FXPageSize,
+			})
+		}
+		return nil
+	}
+	_, _, err := ScanFlashcart(sercon, scanFunc, 64, LEDCtrlBlOn|LEDCtrlRdOn)
+	return result, err
+}

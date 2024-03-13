@@ -14,8 +14,8 @@ const (
 	LEDCtrlRxTx   = 0x20
 	LEDCtrlRxOn   = 0x10
 	LEDCtrlTxOn   = 0x08
-	LEDCtrlRdOn   = 0x04
-	LEDCtrlGrOn   = 0x02
+	LEDCtrlGrOn   = 0x04
+	LEDCtrlRdOn   = 0x02
 	LEDCtrlBlOn   = 0x01
 )
 

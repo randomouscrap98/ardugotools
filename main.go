@@ -24,6 +24,15 @@ func connectWithBootloader(device string) (io.ReadWriteCloser, *arduboy.BasicDev
 	return sercon, d
 }
 
+func mustHaveFlashcart(sercon io.ReadWriteCloser, device *arduboy.BasicDeviceInfo) {
+	extdata, err := arduboy.QueryDevice(device, sercon, false)
+	fatalIfErr(device.Port, "check for flashcart", err)
+	log.Printf("Flashcart: %v", extdata.Jedec)
+	if extdata.Jedec == nil {
+		log.Fatalf("Device %s doesn't seem to have a flashcart!", extdata.Bootloader.Device)
+	}
+}
+
 // Scan command
 type ScanCmd struct {
 }
@@ -42,7 +51,7 @@ type QueryCmd struct {
 
 func (c *QueryCmd) Run() error {
 	sercon, d := connectWithBootloader(c.Device)
-	extdata, err := arduboy.QueryDevice(d, sercon)
+	extdata, err := arduboy.QueryDevice(d, sercon, true)
 	fatalIfErr(c.Device, "query device information", err)
 	PrintJson(extdata)
 	return nil
@@ -78,12 +87,30 @@ func (c *SketchReadCmd) Run() error {
 	return nil
 }
 
+// Flashcart scan command
+type FlashcartScanCmd struct {
+	Device string `arg:"" help:"The system device to read from (use 'any' for first)"`
+	Html   bool   `help:"Generate as html instead (will read images)"`
+}
+
+func (c *FlashcartScanCmd) Run() error {
+	sercon, d := connectWithBootloader(c.Device)
+	mustHaveFlashcart(sercon, d)
+	result, err := arduboy.ScanFlashcartBasic(sercon)
+	fatalIfErr(c.Device, "scan flashcart (basic)", err)
+	PrintJson(result)
+	return nil
+}
+
 var cli struct {
 	Scan   ScanCmd  `cmd:"" help:"Search for Arduboys and return basic information on them"`
 	Query  QueryCmd `cmd:"" help:"Get deeper information about a particular Arduboy"`
 	Sketch struct {
 		Read SketchReadCmd `cmd:"" help:"Read just the sketch portion of flash, saved as a .hex file"`
 	} `cmd:"" help:"Perform actions on the builtin flash or related to sketch files"`
+	Flashcart struct {
+		Scan FlashcartScanCmd `cmd:"" help:"Scan flashcart and return categories/games"`
+	} `cmd:"" help:"Perform actions on the 'external' flashcart (FX/Mini/etc)"`
 }
 
 func main() {

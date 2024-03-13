@@ -282,7 +282,7 @@ func GetBootloaderInfo(sercon io.ReadWriter) (*BootloaderInfo, error) {
 
 // Ask device for JEDEC info.
 // NOTE: this function will block for some time (500ms?) while it verifies the jedec ID!
-func (info *BootloaderInfo) GetJedecInfo(sercon io.ReadWriter) (*JedecInfo, error) {
+func (info *BootloaderInfo) GetJedecInfo(sercon io.ReadWriter, verify bool) (*JedecInfo, error) {
 	if info.Version < MinBootloaderWithFlash {
 		log.Printf("Bootloader version too low for flashcart support! Need: %d, have: %d\n",
 			MinBootloaderWithFlash, info.Version)
@@ -294,14 +294,17 @@ func (info *BootloaderInfo) GetJedecInfo(sercon io.ReadWriter) (*JedecInfo, erro
 
 	rwep.WritePass([]byte("j"))
 	rwep.ReadPass(jedecId1[:])
-	time.Sleep(JedecVerifyWait)
-	rwep.WritePass([]byte("j"))
-	rwep.ReadPass(jedecId2[:])
 
-	if !bytes.Equal(jedecId1[:], jedecId2[:]) {
-		log.Printf("Jedec version producing garbage data, assuming no flashcart!\n")
-		return nil, rwep.err
+	if verify {
+		time.Sleep(JedecVerifyWait)
+		rwep.WritePass([]byte("j"))
+		rwep.ReadPass(jedecId2[:])
+		if !bytes.Equal(jedecId1[:], jedecId2[:]) {
+			log.Printf("Jedec version producing garbage data, assuming no flashcart!\n")
+			return nil, rwep.err
+		}
 	}
+
 	if bytes.Equal(jedecId1[:], []byte{0, 0, 0}) || bytes.Equal(jedecId1[:], []byte{0xFF, 0xFF, 0xFF}) {
 		log.Printf("Jedec version invalid, assuming no flashcart!\n")
 		return nil, rwep.err
@@ -319,7 +322,7 @@ func (info *BootloaderInfo) GetJedecInfo(sercon io.ReadWriter) (*JedecInfo, erro
 }
 
 // Get extended device info from the given information
-func QueryDevice(device *BasicDeviceInfo, sercon io.ReadWriteCloser) (*ExtendedDeviceInfo, error) {
+func QueryDevice(device *BasicDeviceInfo, sercon io.ReadWriteCloser, verify bool) (*ExtendedDeviceInfo, error) {
 	var result ExtendedDeviceInfo
 	var err error
 	result.Basic = device
@@ -327,7 +330,7 @@ func QueryDevice(device *BasicDeviceInfo, sercon io.ReadWriteCloser) (*ExtendedD
 	if err != nil {
 		return nil, err
 	}
-	result.Jedec, err = result.Bootloader.GetJedecInfo(sercon)
+	result.Jedec, err = result.Bootloader.GetJedecInfo(sercon, verify)
 	if err != nil {
 		return nil, err
 	}

@@ -5,6 +5,7 @@ ardugotools
 *.hex
 *.bin
 *.arduboy
+*.json
 ignore/
 adhoc/found_chunks/
 adhoc/adhoc
