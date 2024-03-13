@@ -8,15 +8,95 @@ import (
 	"io"
 )
 
+const (
+	LEDCtrlBtnOff = 0x80
+	LEDCtrlRGB    = 0x40
+	LEDCtrlRxTx   = 0x20
+	LEDCtrlRxOn   = 0x10
+	LEDCtrlTxOn   = 0x08
+	LEDCtrlRdOn   = 0x04
+	LEDCtrlGrOn   = 0x02
+	LEDCtrlBlOn   = 0x01
+)
+
+// Produce the command for setting the address before reading (raw address)
+func AddressCommandRaw(address uint16) []byte {
+	return []byte{byte('A'), byte(address >> 8), byte(address & 0xFF)}
+}
+
+// Produce the command for setting the flash address based on true byte offset
+func AddressCommandFlashAddress(address uint16) []byte {
+	return AddressCommandRaw(address >> 1) // I don't quite know why it's 2-byte-word aligned
+}
+
 // Produce the command for setting the address before reading (page aligned)
-func AddressCommandPage(page uint16) []byte {
-	return []byte{byte('A'), byte(page >> 2), byte((page & 3) << 6)}
+func AddressCommandFlashPage(page uint16) []byte {
+	return AddressCommandFlashAddress(page * uint16(FlashPageSize))
+}
+
+// Produce the command for setting the address before reading flashcart data (flashcart page aligned)
+func AddressCommandFlashcartPage(page uint16) []byte {
+	return AddressCommandRaw(page) //No change
 }
 
 // Produce the command for reading some amount from the current address
 func ReadFlashCommand(length uint16) []byte {
-	return []byte{byte('g'), byte(length >> 8), byte(length & 255), byte('F')}
+	return []byte{byte('g'), byte(length >> 8), byte(length & 0xFF), byte('F')}
 }
+
+// Produce command for reading an amount from the flashcart
+func ReadFlashcartCommand(length uint16) []byte {
+	return []byte{byte('g'), byte(length >> 8), byte(length & 0xFF), byte('C')}
+}
+
+func RgbButtonCommandRaw(data uint8) []byte {
+	return []byte{byte('x'), data}
+}
+
+func RgbButtonCommand(data uint8) []byte {
+	if (data & (LEDCtrlRdOn | LEDCtrlGrOn | LEDCtrlBlOn)) > 0 {
+		data |= LEDCtrlRGB
+	}
+	if (data & (LEDCtrlRxOn | LEDCtrlTxOn)) > 0 {
+		data |= LEDCtrlRxTx
+	}
+	return RgbButtonCommandRaw(data)
+}
+
+func SetRgbButtonState(sercon io.ReadWriter, state uint8) error {
+	var sb [1]byte
+	rwep := ReadWriteErrorPass{rw: sercon}
+	rwep.WritePass(RgbButtonCommand(state))
+	rwep.ReadPass(sb[:])
+	return rwep.err
+}
+
+func ResetRgbButtonState(sercon io.ReadWriter) error {
+	return SetRgbButtonState(sercon, 0)
+	// rwep.WritePass(RgbButtonCommandRaw(LEDCtrlRGB))
+}
+
+//type RgbButtonControl struct {
+//  NoButtons bool
+//  LEDRX bool
+//  LEDTX bool
+//  LEDRed bool
+//  LEDGreen bool
+//  LEDBlue bool
+//}
+
+// func(control *RgbButtonControl) ToCommand() []byte {
+//   var bits uint8
+//   if control.NoButtons {
+//     bits |= 0x80
+//   }
+//   if control.LEDRX || control.LEDTX {
+//     bits |= 0x20
+//     if control.LEDRX {
+//       bits |=
+//   }
+//   return []byte{byte('x'), bits}
+// }
 
 // Remove unused sections from the end of the byte array. In these files, sections
 // of 0xFF represent unused data.

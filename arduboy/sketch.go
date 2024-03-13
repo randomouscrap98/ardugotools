@@ -109,7 +109,7 @@ func AnalyzeSketch(bindata []byte, bootloader bool) SketchAnalysis {
 func ReadFlash(sercon io.ReadWriter) ([]byte, error) {
 	rwep := ReadWriteErrorPass{rw: sercon}
 	// Read from address 0
-	rwep.WritePass(AddressCommandPage(0))
+	rwep.WritePass(AddressCommandFlashPage(0))
 	var readsingle [1]byte
 	rwep.ReadPass(readsingle[:])
 	rwep.WritePass(ReadFlashCommand(uint16(FlashSize)))

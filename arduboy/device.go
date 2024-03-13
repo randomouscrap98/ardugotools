@@ -112,6 +112,7 @@ type BasicDeviceInfo struct {
 
 type BootloaderInfo struct {
 	Device     string
+	SoftwareId string
 	Length     int
 	IsCaterina bool
 	Version    int
@@ -129,9 +130,6 @@ type ExtendedDeviceInfo struct {
 func VidPidString(vid string, pid string) string {
 	return fmt.Sprintf("VID:PID=%s:%s", vid, pid)
 }
-
-// First set of functions is for retrieving basic device information, stuff we can
-// get without querying the device
 
 // Retrieve a list of all connected arduboys and any information that can be parsed
 // without actually connected to the ports
@@ -233,6 +231,12 @@ func GetBootloaderInfo(sercon io.ReadWriter) (*BootloaderInfo, error) {
 	var err error
 	rwep := ReadWriteErrorPass{rw: sercon}
 
+	// Read software ID
+	var sid [7]byte
+	rwep.WritePass([]byte("S"))
+	rwep.ReadPass(sid[:])
+	result.SoftwareId = string(sid[:])
+
 	// Read version
 	var version [2]byte
 	rwep.WritePass([]byte("V"))
@@ -261,7 +265,7 @@ func GetBootloaderInfo(sercon io.ReadWriter) (*BootloaderInfo, error) {
 
 	// Now that we have the length, read the bootloader in its entirety
 	var rawbl [CaterinaTotalSize]byte
-	rwep.WritePass(AddressCommandPage(uint16(CaterinaStartPage)))
+	rwep.WritePass(AddressCommandFlashPage(uint16(CaterinaStartPage)))
 	rwep.ReadPass(rawbl[:1]) // Read just one byte, we don't care what it is apparently
 	rwep.WritePass(ReadFlashCommand(uint16(CaterinaTotalSize)))
 	rwep.ReadPass(rawbl[:])
