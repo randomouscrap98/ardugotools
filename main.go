@@ -24,13 +24,14 @@ func connectWithBootloader(device string) (io.ReadWriteCloser, *arduboy.BasicDev
 	return sercon, d
 }
 
-func mustHaveFlashcart(sercon io.ReadWriteCloser, device *arduboy.BasicDeviceInfo) {
+func mustHaveFlashcart(sercon io.ReadWriteCloser, device *arduboy.BasicDeviceInfo) *arduboy.ExtendedDeviceInfo {
 	extdata, err := arduboy.QueryDevice(device, sercon, false)
 	fatalIfErr(device.Port, "check for flashcart", err)
 	log.Printf("Flashcart: %v", extdata.Jedec)
 	if extdata.Jedec == nil {
 		log.Fatalf("Device %s doesn't seem to have a flashcart!", extdata.Bootloader.Device)
 	}
+	return extdata
 }
 
 // Scan command
@@ -96,10 +97,15 @@ type FlashcartScanCmd struct {
 
 func (c *FlashcartScanCmd) Run() error {
 	sercon, d := connectWithBootloader(c.Device)
-	mustHaveFlashcart(sercon, d)
+	extd := mustHaveFlashcart(sercon, d)
 	result, err := arduboy.ScanFlashcartMeta(sercon, c.Images)
 	fatalIfErr(c.Device, "scan flashcart (basic)", err)
-	PrintJson(result)
+	if c.Html {
+		err = arduboy.RenderFlashcartMeta(result, extd, os.Stdout)
+		fatalIfErr(c.Device, "render flashcart into HTML", err)
+	} else {
+		PrintJson(result)
+	}
 	return nil
 }
 

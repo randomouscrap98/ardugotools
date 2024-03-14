@@ -6,6 +6,7 @@ ardugotools
 *.bin
 *.arduboy
 *.json
+*.html
 ignore/
 adhoc/found_chunks/
 adhoc/adhoc

@@ -267,6 +267,7 @@ type HeaderCategory struct {
 func ScanFlashcartMeta(sercon io.ReadWriter, getImages bool) ([]HeaderCategory, error) {
 	result := make([]HeaderCategory, 0)
 	errchan := make(chan error)
+
 	scanFunc := func(con io.ReadWriter, header *FxHeader, addr int, headers int) error {
 		// Dump the errors and quit the reader as soon as possible
 		select {
