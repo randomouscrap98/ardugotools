@@ -34,6 +34,10 @@ func mustHaveFlashcart(sercon io.ReadWriteCloser, device *arduboy.BasicDeviceInf
 	return extdata
 }
 
+// **********************************
+// *       DEVICES COMMANDS         *
+// **********************************
+
 // Scan command
 type ScanCmd struct {
 }
@@ -57,6 +61,10 @@ func (c *QueryCmd) Run() error {
 	PrintJson(extdata)
 	return nil
 }
+
+// **********************************
+// *       SKETCH COMMANDS          *
+// **********************************
 
 // Sketch read command
 type SketchReadCmd struct {
@@ -88,6 +96,47 @@ func (c *SketchReadCmd) Run() error {
 	return nil
 }
 
+// **********************************
+// *       EEPROM COMMANDS          *
+// **********************************
+
+// Eeprom read command
+type EepromReadCmd struct {
+	Device  string `arg:"" help:"The system device to read from (use 'any' for first)"`
+	Outfile string `short:"o"`
+}
+
+func (c *EepromReadCmd) Run() error {
+	// Read eeprom first
+	sercon, _ := connectWithBootloader(c.Device)
+	eeprom, err := arduboy.ReadEeprom(sercon)
+	fatalIfErr(c.Device, "read eeprom", err)
+	hash := arduboy.Md5String(eeprom)
+	// Figure out save location
+	if c.Outfile == "" {
+		c.Outfile = fmt.Sprintf("eeprom_%s.bin", FileSafeDateTime())
+	}
+	// Open and save file
+	file, err := os.Create(c.Outfile)
+	fatalIfErr(c.Outfile, "open file for writing", err)
+	defer file.Close()
+	num, err := file.Write(eeprom)
+	if num != len(eeprom) {
+		log.Fatalf("Didn't write full file! This is strange!")
+	}
+	fatalIfErr(c.Outfile, "write eeprom to file", err)
+	// Return data about the save
+	result := make(map[string]interface{})
+	result["Filename"] = c.Outfile
+	result["MD5"] = hash
+	PrintJson(result)
+	return nil
+}
+
+// **********************************
+// *      FLASHCART COMMANDS        *
+// **********************************
+
 // Flashcart scan command
 type FlashcartScanCmd struct {
 	Device string `arg:"" help:"The system device to read from (use 'any' for first)"`
@@ -109,12 +158,19 @@ func (c *FlashcartScanCmd) Run() error {
 	return nil
 }
 
+// **********************************
+// *    ALL TOGETHER COMMANDS       *
+// **********************************
+
 var cli struct {
 	Scan   ScanCmd  `cmd:"" help:"Search for Arduboys and return basic information on them"`
 	Query  QueryCmd `cmd:"" help:"Get deeper information about a particular Arduboy"`
 	Sketch struct {
 		Read SketchReadCmd `cmd:"" help:"Read just the sketch portion of flash, saved as a .hex file"`
 	} `cmd:"" help:"Perform actions on the builtin flash or related to sketch files"`
+	Eeprom struct {
+		Read EepromReadCmd `cmd:"" help:"Read entire eeprom, saved as a .bin file"`
+	} `cmd:"" help:"Perform actions on the builtin eeprom (save area)"`
 	Flashcart struct {
 		Scan FlashcartScanCmd `cmd:"" help:"Scan flashcart and return categories/games"`
 	} `cmd:"" help:"Perform actions on the 'external' flashcart (FX/Mini/etc)"`

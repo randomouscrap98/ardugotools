@@ -31,6 +31,7 @@ const (
 	FXPageSize             int = 256
 	FXBlockSize            int = 65536
 	FxPagesPerBlock        int = FXBlockSize / FXPageSize
+	EepromSize             int = 1024
 	CaterinaTotalSize      int = 4096
 	CaterinaStartPage      int = (FlashSize - CaterinaTotalSize) / FlashPageSize
 	CathyTotalSize         int = 3072
