@@ -21,15 +21,16 @@ func fatalIfErr(subject string, doing string, err error) {
 func connectWithBootloader(device string) (io.ReadWriteCloser, *arduboy.BasicDeviceInfo) {
 	sercon, d, err := arduboy.ConnectWithBootloader(device)
 	fatalIfErr(device, "connect", err)
+	log.Printf("Initial contact with %s, set to bootloader mode\n", d.SmallString())
 	return sercon, d
 }
 
 func mustHaveFlashcart(sercon io.ReadWriteCloser, device *arduboy.BasicDeviceInfo) *arduboy.ExtendedDeviceInfo {
 	extdata, err := arduboy.QueryDevice(device, sercon, false)
 	fatalIfErr(device.Port, "check for flashcart", err)
-	log.Printf("Flashcart: %v", extdata.Jedec)
+	log.Printf("Device %s has flashcart: %v\n", device.SmallString(), extdata.Jedec)
 	if extdata.Jedec == nil {
-		log.Fatalf("Device %s doesn't seem to have a flashcart!", extdata.Bootloader.Device)
+		log.Fatalf("Device %s doesn't seem to have a flashcart!\n", extdata.Bootloader.Device)
 	}
 	return extdata
 }
@@ -45,6 +46,7 @@ type ScanCmd struct {
 func (c *ScanCmd) Run() error {
 	devices, err := arduboy.GetBasicDevices()
 	fatalIfErr("scan", "pull devices", err)
+	log.Printf("Scan found %d viable devices\n", len(devices))
 	PrintJson(devices)
 	return nil
 }
@@ -58,6 +60,7 @@ func (c *QueryCmd) Run() error {
 	sercon, d := connectWithBootloader(c.Device)
 	extdata, err := arduboy.QueryDevice(d, sercon, true)
 	fatalIfErr(c.Device, "query device information", err)
+	log.Printf("Device %s is probably a %s\n", d.SmallString(), extdata.Bootloader.Device)
 	PrintJson(extdata)
 	return nil
 }
@@ -74,9 +77,10 @@ type SketchReadCmd struct {
 
 func (c *SketchReadCmd) Run() error {
 	// Read sketch First
-	sercon, _ := connectWithBootloader(c.Device)
+	sercon, d := connectWithBootloader(c.Device)
 	sketch, err := arduboy.ReadSketch(sercon)
 	fatalIfErr(c.Device, "read sketch", err)
+	log.Printf("Read %d bytes from %s\n", len(sketch), d.SmallString())
 	hash := arduboy.Md5String(sketch)
 	// Figure out save location
 	if c.Outfile == "" {
@@ -88,6 +92,7 @@ func (c *SketchReadCmd) Run() error {
 	defer file.Close()
 	err = arduboy.BinToHex(sketch, file)
 	fatalIfErr(c.Outfile, "convert sketch to hex", err)
+	log.Printf("Wrote sketch to file %s\n", c.Outfile)
 	// Return data about the save
 	result := make(map[string]interface{})
 	result["Filename"] = c.Outfile
@@ -108,9 +113,10 @@ type EepromReadCmd struct {
 
 func (c *EepromReadCmd) Run() error {
 	// Read eeprom first
-	sercon, _ := connectWithBootloader(c.Device)
+	sercon, d := connectWithBootloader(c.Device)
 	eeprom, err := arduboy.ReadEeprom(sercon)
 	fatalIfErr(c.Device, "read eeprom", err)
+	log.Printf("Read %d bytes from %s (full eeprom)\n", len(eeprom), d.SmallString())
 	hash := arduboy.Md5String(eeprom)
 	// Figure out save location
 	if c.Outfile == "" {
@@ -125,11 +131,53 @@ func (c *EepromReadCmd) Run() error {
 		log.Fatalf("Didn't write full file! This is strange!")
 	}
 	fatalIfErr(c.Outfile, "write eeprom to file", err)
+	log.Printf("Wrote eeprom to file %s\n", c.Outfile)
 	// Return data about the save
 	result := make(map[string]interface{})
 	result["Filename"] = c.Outfile
 	result["MD5"] = hash
 	PrintJson(result)
+	return nil
+}
+
+// Eeprom write command
+type EepromWriteCmd struct {
+	Device string `arg:"" help:"The system device to read from (use 'any' for first)"`
+	Infile string `short:"i"`
+}
+
+func (c *EepromWriteCmd) Run() error {
+	sercon, d := connectWithBootloader(c.Device)
+	// Go find the file first
+	if c.Infile == "" {
+		c.Infile = "eeprom.bin"
+	}
+	eeprom, err := os.ReadFile(c.Infile)
+	fatalIfErr(c.Device, "read file", err)
+	log.Printf("Read %d bytes from file %s\n", len(eeprom), c.Infile)
+	// Now write the eeprom
+	err = arduboy.WriteEeprom(sercon, eeprom)
+	fatalIfErr(c.Device, "write eeprom", err)
+	log.Printf("Wrote %d bytes to %s (full eeprom)\n", len(eeprom), d.SmallString())
+	hash := arduboy.Md5String(eeprom)
+	// Return data about the eeprom (does this even matter?)
+	result := make(map[string]interface{})
+	result["Filename"] = c.Infile
+	result["MD5"] = hash
+	PrintJson(result)
+	return nil
+}
+
+// Eeprom delete command
+type EepromDeleteCmd struct {
+	Device string `arg:"" help:"The system device to read from (use 'any' for first)"`
+}
+
+func (c *EepromDeleteCmd) Run() error {
+	sercon, d := connectWithBootloader(c.Device)
+	err := arduboy.DeleteEeprom(sercon)
+	fatalIfErr(c.Device, "delete eeprom", err)
+	log.Printf("Deleted eeprom on %s\n", d.SmallString())
 	return nil
 }
 
@@ -148,7 +196,12 @@ func (c *FlashcartScanCmd) Run() error {
 	sercon, d := connectWithBootloader(c.Device)
 	extd := mustHaveFlashcart(sercon, d)
 	result, err := arduboy.ScanFlashcartMeta(sercon, c.Images)
+	programs := 0
+	for _, c := range result {
+		programs += len(c.Slots)
+	}
 	fatalIfErr(c.Device, "scan flashcart (basic)", err)
+	log.Printf("Scanned %d categories, %d programs from flashcart on %s\n", len(result), programs, d.SmallString())
 	if c.Html {
 		err = arduboy.RenderFlashcartMeta(result, extd, os.Stdout)
 		fatalIfErr(c.Device, "render flashcart into HTML", err)
@@ -169,7 +222,9 @@ var cli struct {
 		Read SketchReadCmd `cmd:"" help:"Read just the sketch portion of flash, saved as a .hex file"`
 	} `cmd:"" help:"Perform actions on the builtin flash or related to sketch files"`
 	Eeprom struct {
-		Read EepromReadCmd `cmd:"" help:"Read entire eeprom, saved as a .bin file"`
+		Read   EepromReadCmd   `cmd:"" help:"Read entire eeprom, saved as a .bin file"`
+		Write  EepromWriteCmd  `cmd:"" help:"Write data to eeprom"`
+		Delete EepromDeleteCmd `cmd:"" help:"Reset entire eeprom"`
 	} `cmd:"" help:"Perform actions on the builtin eeprom (save area)"`
 	Flashcart struct {
 		Scan FlashcartScanCmd `cmd:"" help:"Scan flashcart and return categories/games"`

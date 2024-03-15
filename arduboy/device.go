@@ -111,6 +111,10 @@ type BasicDeviceInfo struct {
 	IsBootloader bool
 }
 
+func (device *BasicDeviceInfo) SmallString() string {
+	return fmt.Sprintf("%s:%s(%s)", device.Port, device.VidPid, device.BoardType)
+}
+
 type BootloaderInfo struct {
 	Device     string
 	SoftwareId string
