@@ -246,6 +246,44 @@ func ScanFlashcart(sercon io.ReadWriter, headerFunc func(io.ReadWriter, *FxHeade
 	}
 }
 
+// Same as ScanFlashcart but for a file / other file-like readerseeker. No address
+// given, as that can be determined from the ReadSeeker given
+func ScanFlashcartFile(data io.ReadSeeker, headerFunc func(io.ReadSeeker, *FxHeader, int) error) (int, error) {
+	headerCount := 0
+	headerRaw := make([]byte, FxHeaderLength)
+
+ScanFlashcartLoop:
+	for {
+		_, err := io.ReadFull(data, headerRaw)
+		if err != nil {
+			return 0, err
+		}
+
+		// Parse the header. It might throw an "acceptable" error.
+		header, _, err := ParseHeader(headerRaw)
+		if err != nil {
+			switch err.(type) {
+			case *NotHeaderError: // This is fine, we're just at the end
+				break ScanFlashcartLoop
+			default:
+				return 0, err
+			}
+		}
+
+		// Call the user's function with the current state as we know it
+		err = headerFunc(data, header, headerCount)
+		if err != nil {
+			return 0, err
+		}
+
+		// Move to the next header
+		headerCount++
+		data.Seek(int64(header.NextPage)*int64(FXPageSize), io.SeekStart)
+	}
+
+	return headerCount, nil
+}
+
 type HeaderProgram struct {
 	Title     string
 	Version   string
@@ -263,6 +301,36 @@ type HeaderCategory struct {
 	Slots []*HeaderProgram
 }
 
+// Given a header, store it in the appropriate place within the 'result'
+// category list. This is a common operation for flashcart metadata scanning.
+// Gives you the location where you can store the image (since both have the
+// generic item)
+func MapHeaderResult(result *[]HeaderCategory, header *FxHeader) (*string, error) {
+	if header.IsCategory() {
+		*result = append(*result, HeaderCategory{
+			Title: header.Title,
+			Info:  header.Info,
+			Slots: make([]*HeaderProgram, 0),
+		})
+		return &(*result)[len(*result)-1].Image, nil
+	} else {
+		last := len(*result) - 1
+		if last < 0 {
+			return nil, errors.New("Invalid flashcart: did not start with a category!")
+		}
+		newProgram := &HeaderProgram{
+			Title:     header.Title,
+			Version:   header.Version,
+			Developer: header.Developer,
+			Info:      header.Info,
+			Sha256:    header.Sha256,
+			TotalSize: int(header.SlotPages) * FXPageSize,
+		}
+		(*result)[last].Slots = append((*result)[last].Slots, newProgram)
+		return &newProgram.Image, nil
+	}
+}
+
 // Scrape just the metadata out of the flashcart. Optionally pull images (much slower)
 func ScanFlashcartMeta(sercon io.ReadWriter, getImages bool) ([]HeaderCategory, error) {
 	result := make([]HeaderCategory, 0)
@@ -278,30 +346,9 @@ func ScanFlashcartMeta(sercon io.ReadWriter, getImages bool) ([]HeaderCategory, 
 		default:
 		}
 		// Where to eventually write the completed image (goroutine)
-		var writeimg *string
-		// Figure out which kind of thing to write to result (some are categories, some are programs)
-		if header.IsCategory() {
-			result = append(result, HeaderCategory{
-				Title: header.Title,
-				Info:  header.Info,
-				Slots: make([]*HeaderProgram, 0),
-			})
-			writeimg = &result[len(result)-1].Image
-		} else {
-			last := len(result) - 1
-			if last < 0 {
-				return errors.New("Invalid flashcart: did not start with a category!")
-			}
-			newProgram := &HeaderProgram{
-				Title:     header.Title,
-				Version:   header.Version,
-				Developer: header.Developer,
-				Info:      header.Info,
-				Sha256:    header.Sha256,
-				TotalSize: int(header.SlotPages) * FXPageSize,
-			}
-			result[last].Slots = append(result[last].Slots, newProgram)
-			writeimg = &newProgram.Image
+		writeimg, err := MapHeaderResult(&result, header)
+		if err != nil {
+			return err
 		}
 		// Pull images. The first part MUST be done synchronously, but the image conversion
 		// can be run at any time
@@ -347,6 +394,41 @@ ErrorDump:
 		default:
 			break ErrorDump
 		}
+	}
+
+	return result, nil
+}
+
+// Scrape metadata out of a file flashcart, same as ScanFlashcartMeta
+func ScanFlashcartFileMeta(data io.ReadSeeker, getImages bool) ([]HeaderCategory, error) {
+	result := make([]HeaderCategory, 0)
+	imageRaw := make([]byte, ScreenBytes)
+	data.Seek(0, io.SeekStart)
+
+	scanFunc := func(con io.ReadSeeker, header *FxHeader, headerCount int) error {
+		writeimg, err := MapHeaderResult(&result, header)
+		if err != nil {
+			return err
+		}
+		if getImages {
+			_, err := io.ReadFull(con, imageRaw)
+			if err != nil {
+				return err
+			}
+			outbytes := RawToGrayscale(imageRaw, 0, 255)
+			pngraw, err := GrayscaleToPng(outbytes)
+			if err != nil {
+				return err
+			} else {
+				*writeimg = "data:image/png;base64," + base64.StdEncoding.EncodeToString(pngraw)
+			}
+		}
+		return nil
+	}
+
+	_, err := ScanFlashcartFile(data, scanFunc)
+	if err != nil {
+		return nil, err
 	}
 
 	return result, nil
