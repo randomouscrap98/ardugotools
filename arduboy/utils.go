@@ -111,23 +111,25 @@ func Md5String(data []byte) string {
 	return hex.EncodeToString(hash[:])
 }
 
-// The hex writer library writes some record indicating an extended address
-// mode which Arduboy CLEARLY doesn't need nor want, and so we get rid of it.
-// By force.
-type FunnyHexFixer struct {
-	FirstLineRead bool
+// A writer wrapper which removes the first few lines of output
+type RemoveFirstLines struct {
+	LinesToIgnore int
 	Writer        io.Writer
 }
 
-// Skip everything up to and including the first newline
-func (fhf *FunnyHexFixer) Write(data []byte) (int, error) {
-	if fhf.FirstLineRead {
+// Skip everything up to and including the first N newlines
+func (fhf *RemoveFirstLines) Write(data []byte) (int, error) {
+	if fhf.LinesToIgnore <= 0 {
+		// Ready to write
 		return fhf.Writer.Write(data)
 	}
+	// Consume bytes until we reach the requisite number of newlines
 	for i, b := range data {
 		if b == byte('\n') {
-			fhf.FirstLineRead = true
-			return fhf.Write(data[i+1:])
+			fhf.LinesToIgnore -= 1
+			written, err := fhf.Write(data[i+1:])
+			written += (i + 1)
+			return written, err
 		}
 	}
 	return len(data), nil

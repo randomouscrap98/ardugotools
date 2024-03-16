@@ -72,20 +72,19 @@ func (c *QueryCmd) Run() error {
 // Sketch read command
 type SketchReadCmd struct {
 	Device  string `arg:"" help:"The system device to read from (use 'any' for first)"`
-	Outfile string `short:"o"`
+	Outfile string `type:"path" short:"o"`
 }
 
 func (c *SketchReadCmd) Run() error {
-	// Read sketch First
+	// Figure out save location
+	if c.Outfile == "" {
+		c.Outfile = fmt.Sprintf("sketch_%s.hex", FileSafeDateTime())
+	}
+	// Read sketch
 	sercon, d := connectWithBootloader(c.Device)
 	sketch, err := arduboy.ReadSketch(sercon)
 	fatalIfErr(c.Device, "read sketch", err)
 	log.Printf("Read %d bytes from %s\n", len(sketch), d.SmallString())
-	hash := arduboy.Md5String(sketch)
-	// Figure out save location
-	if c.Outfile == "" {
-		c.Outfile = fmt.Sprintf("%s_%s.hex", hash, FileSafeDateTime())
-	}
 	// Open and save file
 	file, err := os.Create(c.Outfile)
 	fatalIfErr(c.Outfile, "open file for writing", err)
@@ -96,7 +95,7 @@ func (c *SketchReadCmd) Run() error {
 	// Return data about the save
 	result := make(map[string]interface{})
 	result["Filename"] = c.Outfile
-	result["MD5"] = hash
+	result["MD5"] = arduboy.Md5String(sketch)
 	PrintJson(result)
 	return nil
 }
@@ -108,20 +107,20 @@ func (c *SketchReadCmd) Run() error {
 // Eeprom read command
 type EepromReadCmd struct {
 	Device  string `arg:"" help:"The system device to read from (use 'any' for first)"`
-	Outfile string `short:"o"`
+	Outfile string `type:"path" short:"o"`
 }
 
 func (c *EepromReadCmd) Run() error {
-	// Read eeprom first
+	// Figure out save location
+	if c.Outfile == "" {
+		c.Outfile = fmt.Sprintf("eeprom_%s.bin", FileSafeDateTime())
+	}
+	// Read eeprom
 	sercon, d := connectWithBootloader(c.Device)
 	eeprom, err := arduboy.ReadEeprom(sercon)
 	fatalIfErr(c.Device, "read eeprom", err)
 	log.Printf("Read %d bytes from %s (full eeprom)\n", len(eeprom), d.SmallString())
 	hash := arduboy.Md5String(eeprom)
-	// Figure out save location
-	if c.Outfile == "" {
-		c.Outfile = fmt.Sprintf("eeprom_%s.bin", FileSafeDateTime())
-	}
 	// Open and save file
 	file, err := os.Create(c.Outfile)
 	fatalIfErr(c.Outfile, "open file for writing", err)
@@ -143,7 +142,7 @@ func (c *EepromReadCmd) Run() error {
 // Eeprom write command
 type EepromWriteCmd struct {
 	Device string `arg:"" help:"The system device to read from (use 'any' for first)"`
-	Infile string `short:"i"`
+	Infile string `type:"existingfile" short:"i"`
 }
 
 func (c *EepromWriteCmd) Run() error {
@@ -212,23 +211,93 @@ func (c *FlashcartScanCmd) Run() error {
 }
 
 // **********************************
+// *       CONVERT COMMANDS         *
+// **********************************
+
+type Hex2BinCmd struct {
+	Outfile string `type:"path" short:"o"`
+	Infile  string `type:"existingfile" short:"i"`
+}
+
+func (c *Hex2BinCmd) Run() error {
+	if c.Infile == "" {
+		c.Infile = "sketch.hex"
+	}
+	if c.Outfile == "" {
+		c.Outfile = fmt.Sprintf("sketch_hex2bin_%s.bin", FileSafeDateTime())
+	}
+	sketch, err := os.Open(c.Infile)
+	fatalIfErr("hex2bin", "read hex file", err)
+	defer sketch.Close()
+	bin, err := arduboy.HexToBin(sketch)
+	fatalIfErr("hex2bin", "convert hex", err)
+	dest, err := os.Create(c.Outfile)
+	fatalIfErr("hex2bin", "write file", err)
+	defer dest.Close()
+	dest.Write(bin)
+	result := make(map[string]interface{})
+	result["Infile"] = c.Infile
+	result["Outfile"] = c.Outfile
+	result["Bytes"] = len(bin)
+	result["MD5"] = arduboy.Md5String(bin)
+	PrintJson(result)
+	return nil
+}
+
+type Bin2HexCmd struct {
+	Outfile string `type:"path" short:"o"`
+	Infile  string `type:"existingfile" short:"i"`
+}
+
+func (c *Bin2HexCmd) Run() error {
+	if c.Infile == "" {
+		c.Infile = "sketch.bin"
+	}
+	if c.Outfile == "" {
+		c.Outfile = fmt.Sprintf("sketch_bin2hex_%s.hex", FileSafeDateTime())
+	}
+	sketch, err := os.ReadFile(c.Infile)
+	fatalIfErr("bin2hex", "read bin file", err)
+	dest, err := os.Create(c.Outfile)
+	fatalIfErr("bin2hex", "write file", err)
+	defer dest.Close()
+	err = arduboy.BinToHex(sketch, dest)
+	fatalIfErr("bin2hex", "convert bin", err)
+	result := make(map[string]interface{})
+	result["Infile"] = c.Infile
+	result["Outfile"] = c.Outfile
+	result["Bytes"] = len(sketch)
+	result["MD5"] = arduboy.Md5String(sketch)
+	PrintJson(result)
+	return nil
+}
+
+// **********************************
 // *    ALL TOGETHER COMMANDS       *
 // **********************************
 
 var cli struct {
-	Scan   ScanCmd  `cmd:"" help:"Search for Arduboys and return basic information on them"`
-	Query  QueryCmd `cmd:"" help:"Get deeper information about a particular Arduboy"`
-	Sketch struct {
-		Read SketchReadCmd `cmd:"" help:"Read just the sketch portion of flash, saved as a .hex file"`
-	} `cmd:"" help:"Perform actions on the builtin flash or related to sketch files"`
-	Eeprom struct {
-		Read   EepromReadCmd   `cmd:"" help:"Read entire eeprom, saved as a .bin file"`
-		Write  EepromWriteCmd  `cmd:"" help:"Write data to eeprom"`
-		Delete EepromDeleteCmd `cmd:"" help:"Reset entire eeprom"`
-	} `cmd:"" help:"Perform actions on the builtin eeprom (save area)"`
-	Flashcart struct {
-		Scan FlashcartScanCmd `cmd:"" help:"Scan flashcart and return categories/games"`
-	} `cmd:"" help:"Perform actions on the 'external' flashcart (FX/Mini/etc)"`
+	Scan struct {
+		Devices   ScanCmd          `cmd:"" help:"Search for Arduboys and return basic information on them"`
+		Flashcart FlashcartScanCmd `cmd:"" help:"Scan flashcart and return categories/games"`
+	} `cmd:"" help:"Get cursory information on various things (devices, flashcart, etc)"`
+	Analyze struct {
+		Device QueryCmd `cmd:"" help:"Get deeper information about a particular Arduboy"`
+	} `cmd:"" help:"Get deeper information on various things (device, flashcart, etc)"`
+	Read struct {
+		Sketch SketchReadCmd `cmd:"" help:"Read just the sketch portion of flash, saved as a .hex file"`
+		Eeprom EepromReadCmd `cmd:"" help:"Read entire eeprom, saved as a .bin file"`
+	} `cmd:"" help:"Read data from arduboy (sketch/flashcart/eeprom)"`
+	Write struct {
+		Eeprom EepromWriteCmd `cmd:"" help:"Write data to eeprom"`
+	} `cmd:"" help:"Write data to arduboy (sketch/flashcart/eeprom)"`
+	Delete struct {
+		Eeprom EepromDeleteCmd `cmd:"" help:"Reset entire eeprom"`
+	} `cmd:"" help:"Delete data on arduboy (eeprom)"`
+	Convert struct {
+		Hex2Bin Hex2BinCmd `cmd:"" help:"Convert hex to bin" name:"hex2bin"`
+		Bin2Hex Bin2HexCmd `cmd:"" help:"Convert bin to hex" name:"bin2hex"`
+	} `cmd:"" help:"Convert data formats back and forth (usually all on filesystem)"`
 }
 
 func main() {

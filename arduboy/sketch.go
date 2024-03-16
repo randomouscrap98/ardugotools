@@ -141,6 +141,29 @@ func ReadSketch(sercon io.ReadWriter) ([]byte, error) {
 func BinToHex(data []byte, writer io.Writer) error {
 	hexmem := gohex.NewMemory()
 	hexmem.SetBinary(0, data)
-	funnee := FunnyHexFixer{Writer: writer}
+	funnee := RemoveFirstLines{LinesToIgnore: 1, Writer: writer}
 	return hexmem.DumpIntelHex(&funnee, HexLineLength)
+}
+
+// Convert hex within given reader to full byte blob. Does NOT modify the
+// data in any way (no padding/etc)
+func HexToBin(reader io.Reader) ([]byte, error) {
+	hexmem := gohex.NewMemory()
+	err := hexmem.ParseIntelHex(reader)
+	if err != nil {
+		return nil, err
+	}
+	var dataLength uint32 = 0
+	for _, segment := range hexmem.GetDataSegments() {
+		dataLength = max(dataLength, segment.Address+uint32(len(segment.Data)))
+	}
+	log.Printf("Computed hex data length is %d\n", dataLength)
+	result := make([]byte, dataLength)
+	for i := range result {
+		result[i] = 0xFF
+	}
+	for _, segment := range hexmem.GetDataSegments() {
+		copy(result[segment.Address:], segment.Data)
+	}
+	return result, nil
 }
