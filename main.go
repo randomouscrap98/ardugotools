@@ -298,10 +298,18 @@ var cli struct {
 		Hex2Bin Hex2BinCmd `cmd:"" help:"Convert hex to bin" name:"hex2bin"`
 		Bin2Hex Bin2HexCmd `cmd:"" help:"Convert bin to hex" name:"bin2hex"`
 	} `cmd:"" help:"Convert data formats back and forth (usually all on filesystem)"`
+	Version kong.VersionFlag `help:"Show version information"`
 }
 
 func main() {
-	ctx := kong.Parse(&cli)
+	ctx := kong.Parse(&cli,
+		kong.Name("ardugotools"),
+		kong.ShortUsageOnError(),
+		kong.Description("A set of tools for working with Arduboy"),
+		kong.Vars{
+			"version": "0.1.0",
+		},
+	)
 	err := ctx.Run()
 	ctx.FatalIfErrorf(err)
 }
