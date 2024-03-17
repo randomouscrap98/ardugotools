@@ -58,6 +58,7 @@ type QueryCmd struct {
 
 func (c *QueryCmd) Run() error {
 	sercon, d := connectWithBootloader(c.Device)
+	defer sercon.Close()
 	extdata, err := arduboy.QueryDevice(d, sercon, true)
 	fatalIfErr(c.Device, "query device information", err)
 	log.Printf("Device %s is probably a %s\n", d.SmallString(), extdata.Bootloader.Device)
@@ -82,6 +83,7 @@ func (c *SketchReadCmd) Run() error {
 	}
 	// Read sketch
 	sercon, d := connectWithBootloader(c.Device)
+	defer sercon.Close()
 	sketch, err := arduboy.ReadSketch(sercon, true)
 	fatalIfErr(c.Device, "read sketch", err)
 	log.Printf("Read %d bytes from %s\n", len(sketch), d.SmallString())
@@ -96,18 +98,21 @@ func (c *SketchReadCmd) Run() error {
 	result := make(map[string]interface{})
 	result["Filename"] = c.Outfile
 	result["MD5"] = arduboy.Md5String(sketch)
+	result["SketchLength"] = len(sketch)
 	PrintJson(result)
 	return nil
 }
 
-// Sketch write command
-type SketchWriteCmd struct {
+// Raw Hex write command
+type RawHexWriteCmd struct {
 	Device string `arg:"" help:"The system device to write to (use 'any' for first)"`
 	Infile string `type:"existingfile" short:"i" help:"File to load hex from"`
+	Runnow bool   `help:"Run sketch immediately"`
 }
 
-func (c *SketchWriteCmd) Run() error {
+func (c *RawHexWriteCmd) Run() error {
 	sercon, d := connectWithBootloader(c.Device)
+	defer sercon.Close()
 	// Go find the file first
 	if c.Infile == "" {
 		c.Infile = "sketch.hex"
@@ -115,8 +120,8 @@ func (c *SketchWriteCmd) Run() error {
 	sketchRaw, err := os.Open(c.Infile)
 	fatalIfErr(c.Device, "read file", err)
 	// Now write the sketch. This includes validation steps
-	sketch, writtenPages, err := arduboy.WriteSketch(sercon, sketchRaw)
-	fatalIfErr(c.Device, "write sketch", err)
+	sketch, writtenPages, err := arduboy.WriteHex(sercon, sketchRaw, false)
+	fatalIfErr(c.Device, "write raw hex", err)
 	// Figure out some data to give back to the user about the sketch write
 	numwritten := 0
 	lastWritten := -1
@@ -131,15 +136,60 @@ func (c *SketchWriteCmd) Run() error {
 		}
 	}
 	log.Printf("Wrote %d pages to %s\n", numwritten, d.SmallString())
+	if c.Runnow {
+		arduboy.ExitBootloader(sercon)
+	}
 	hash := arduboy.Md5String(sketch)
 	// Return data about the eeprom (does this even matter?)
 	result := make(map[string]interface{})
 	result["Filename"] = c.Infile
-	result["MD5"] = hash
 	result["PagesWritten"] = numwritten
 	result["Contiguous"] = contiguous
-	result["SketchSize"] = numwritten * arduboy.FlashPageSize
-	result["TotalWritableFlash"] = len(sketch)
+	result["SketchLength"] = numwritten * arduboy.FlashPageSize
+	result["UsableFlashLength"] = len(sketch)
+	result["UsableFlashMD5"] = hash
+	PrintJson(result)
+	return nil
+}
+
+// Sketch write command (use this one)
+type SketchWriteCmd struct {
+	Device string `arg:"" help:"The system device to write to (use 'any' for first)"`
+	Infile string `type:"existingfile" short:"i" help:"File to load hex from"`
+	Runnow bool   `help:"Run sketch immediately"`
+}
+
+func (c *SketchWriteCmd) Run() error {
+	sercon, d := connectWithBootloader(c.Device)
+	defer sercon.Close()
+	// Go find the file first
+	if c.Infile == "" {
+		c.Infile = "sketch.hex"
+	}
+	sketchRaw, err := os.Open(c.Infile)
+	fatalIfErr(c.Device, "read file", err)
+	// Now write the sketch. This includes validation steps
+	sketch, writtenPages, err := arduboy.WriteHex(sercon, sketchRaw, true)
+	fatalIfErr(c.Device, "write raw hex", err)
+	for i, w := range writtenPages {
+		if !w {
+			log.Fatalf("PROGRAM ERROR: Did not write full memory! Missing page %d", i)
+		}
+	}
+	trimmed := arduboy.TrimUnused(sketch, arduboy.FlashPageSize)
+	log.Printf("Wrote %d bytes to %s (sketch was %d)\n", len(sketch), d.SmallString(), len(trimmed))
+	if c.Runnow {
+		arduboy.ExitBootloader(sercon)
+	}
+	fullhash := arduboy.Md5String(sketch)
+	hash := arduboy.Md5String(trimmed)
+	// Return data about the eeprom (does this even matter?)
+	result := make(map[string]interface{})
+	result["Filename"] = c.Infile
+	result["SketchLength"] = len(trimmed)
+	result["SketchMD5"] = hash
+	result["UsableFlashLength"] = len(sketch)
+	result["UsableFlashMD5"] = fullhash
 	PrintJson(result)
 	return nil
 }
@@ -161,6 +211,7 @@ func (c *EepromReadCmd) Run() error {
 	}
 	// Read eeprom
 	sercon, d := connectWithBootloader(c.Device)
+	defer sercon.Close()
 	eeprom, err := arduboy.ReadEeprom(sercon)
 	fatalIfErr(c.Device, "read eeprom", err)
 	log.Printf("Read %d bytes from %s (full eeprom)\n", len(eeprom), d.SmallString())
@@ -191,6 +242,7 @@ type EepromWriteCmd struct {
 
 func (c *EepromWriteCmd) Run() error {
 	sercon, d := connectWithBootloader(c.Device)
+	defer sercon.Close()
 	// Go find the file first
 	if c.Infile == "" {
 		c.Infile = "eeprom.bin"
@@ -218,6 +270,7 @@ type EepromDeleteCmd struct {
 
 func (c *EepromDeleteCmd) Run() error {
 	sercon, d := connectWithBootloader(c.Device)
+	defer sercon.Close()
 	err := arduboy.DeleteEeprom(sercon)
 	fatalIfErr(c.Device, "delete eeprom", err)
 	log.Printf("Deleted eeprom on %s\n", d.SmallString())
@@ -289,6 +342,7 @@ func (c *FlashcartReadCmd) Run() error {
 	defer file.Close()
 	// Read flashcart
 	sercon, d := connectWithBootloader(c.Device)
+	defer sercon.Close()
 	_ = mustHaveFlashcart(sercon, d)
 	length, slots, err := arduboy.ReadWholeFlashcart(sercon, file, true)
 	fatalIfErr(c.Device, "read flashcart", err)
@@ -383,7 +437,8 @@ var cli struct {
 	} `cmd:"" help:"Read data from arduboy (sketch/flashcart/eeprom)"`
 	Write struct {
 		Eeprom EepromWriteCmd `cmd:"" help:"Write data to eeprom"`
-		Sketch SketchWriteCmd `cmd:"" help:"Write hex file to arduboy"`
+		Rawhex RawHexWriteCmd `cmd:"" help:"Write hex file to arduboy precisely as-is"`
+		Sketch SketchWriteCmd `cmd:"" help:"Write arduboy hex file to arduboy (standard procedure)"`
 	} `cmd:"" help:"Write data to arduboy (sketch/flashcart/eeprom)"`
 	Delete struct {
 		Eeprom EepromDeleteCmd `cmd:"" help:"Reset entire eeprom"`

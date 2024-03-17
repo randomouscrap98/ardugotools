@@ -143,7 +143,7 @@ func ReadSketch(sercon io.ReadWriter, trim bool) ([]byte, error) {
 	}
 }
 
-// Writing a sketch is WEIRD because of the intel hex format. The hex file indicates various
+// Writing a sketch the "right way" is WEIRD because of the intel hex format. The hex file indicates various
 // addresses to write data to, not a giant data blob. In theory, you could supply this function with
 // hex that writes only every other page, or only some pages in the middle. As such, you must provide
 // the raw sketch, not actual binary data, since there might be holes (there most likely aren't).
@@ -151,25 +151,53 @@ func ReadSketch(sercon io.ReadWriter, trim bool) ([]byte, error) {
 // memory, applies the hex modifications on top, then writes only the modified pages (smallest
 // writable unit) back to the flash memory. We could technically ignore the hex standard and assume
 // no sketch will ever have holes and simplify this dramatically, but I wanted this to be as
-// correct as possible.
-func WriteSketch(sercon io.ReadWriter, rawSketch io.Reader) ([]byte, []bool, error) {
+// correct as possible. Alternatively, to write an "arduboy" sketch program, set fullClear to true
+// and you don't have to worry about any weirdness
+func WriteHex(sercon io.ReadWriter, rawSketch io.Reader, fullClear bool) ([]byte, []bool, error) {
 	// Read the existing sketch area. We will be writing back
 	// ONLY the parts that changed (this is what the intel hex format
 	// is for) Set some RGB for light indication of which stage we're on
-	log.Printf("Reading full sketch + applying hex in-memory")
+	log.Printf("Reading full sketch + applying hex in-memory\n")
 	SetRgbButtonState(sercon, LEDCtrlBtnOff|LEDCtrlBlOn)
 	defer ResetRgbButtonState(sercon)
+	var sketch []byte
 	sketch, err := ReadSketch(sercon, false)
 	if err != nil {
 		return nil, nil, err
 	}
+	writtenPages := make([]bool, len(sketch)/FlashPageSize)
+	if fullClear {
+		// This makes the read USELESS but since it's so fast, we just... do it anyway.
+		// If it becomes a problem, properly read the bootloader info and create a fake
+		// sketch full of 0xFF
+		for i := range sketch {
+			sketch[i] = 0xFF
+		}
+		// Force every page to be written
+		for i := range writtenPages {
+			writtenPages[i] = true
+		}
+	}
+	log.Printf("Writable flash area is %d bytes (%d pages)\n", len(sketch), len(sketch)/FlashPageSize)
 	if len(sketch)%FlashPageSize > 0 {
 		return nil, nil, fmt.Errorf("PROGRAM ERROR: sketch area not page aligned! Length: %d", len(sketch))
 	}
-	writtenPages := make([]bool, len(sketch)/FlashPageSize)
 	// Scan through the hex and the existing sketch, see if it goes beyond
 	// the bounds. If it does, it's an error.
 	hexmem := gohex.NewMemory()
+	//if fullClear {
+	//	// Prefill memory with all 0xFF
+	//	fullempty := make([]byte, FlashPageSize)
+	//	for i := range fullempty {
+	//		fullempty[i] = 0xFF
+	//	}
+	//	for p := 0; p < len(sketch); p += FlashPageSize {
+	//		err = hexmem.AddBinary(uint32(p), fullempty)
+	//		if err != nil {
+	//			return nil, nil, err
+	//		}
+	//	}
+	//}
 	err = hexmem.ParseIntelHex(rawSketch)
 	if err != nil {
 		return nil, nil, err
@@ -186,9 +214,7 @@ func WriteSketch(sercon io.ReadWriter, rawSketch io.Reader) ([]byte, []bool, err
 		}
 		copy(sketch[segment.Address:], segment.Data)
 	}
-	// Now write it back page by page. I don't know if this is strictly required, but it's
-	// what the original python scripts did. It's easy enough to change if you can simply
-	// dump the whole thing in there
+	// Now write it back page by page based on which pages have been touched
 	log.Printf("Writing ONLY modified sketch pages")
 	SetRgbButtonState(sercon, LEDCtrlBtnOff|LEDCtrlRdOn)
 	rwep := ReadWriteErrorPass{rw: sercon}
@@ -223,10 +249,12 @@ func WriteSketch(sercon io.ReadWriter, rawSketch io.Reader) ([]byte, []bool, err
 	return newsketch, writtenPages, nil
 }
 
-// Throws an error if sketch on system does not match the given sketch
-func VerifySketch(sercon io.ReadWriter, rawSketch io.Reader) error {
-	return nil
-}
+// // For the VAST MAJORITY (basically all) sketches, we actually only want the data
+// // specified in the sketch and NOTHING else. As such, we actually have a vastly simplified
+// // approach to writing, which is simply to create a full sketch of 0xFF, apply the hex on
+// // top, then write the entire thing to the arduboy.
+// func WriteSketch(sercon io.ReadWriter, rawSketch io.Reader) ([]byte, error) {
+// }
 
 // Convert given byte blob to hex. Does NOT modify the data in any way
 func BinToHex(data []byte, writer io.Writer) error {

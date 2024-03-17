@@ -230,6 +230,19 @@ func ConnectWithBootloader(port string) (io.ReadWriteCloser, *BasicDeviceInfo, e
 	return sercon, device, nil
 }
 
+// Exit the given bootloader
+func ExitBootloader(sercon io.ReadWriteCloser) error {
+	rwep := ReadWriteErrorPass{rw: sercon}
+	onebyte := make([]byte, 1)
+	exitstr := [...]byte{'E'}
+	rwep.WritePass(exitstr[:])
+	rwep.ReadPass(onebyte)
+	if rwep.err != nil {
+		return rwep.err
+	}
+	return sercon.Close()
+}
+
 // Pull as much bootloader information as possible without overstepping
 // into JEDEC or whatever
 func GetBootloaderInfo(sercon io.ReadWriter) (*BootloaderInfo, error) {
