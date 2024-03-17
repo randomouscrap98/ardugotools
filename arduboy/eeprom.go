@@ -31,12 +31,13 @@ func WriteEeprom(sercon io.ReadWriter, data []byte) error {
 	SetRgbButtonState(sercon, LEDCtrlBtnOff|LEDCtrlRdOn|LEDCtrlGrOn)
 	defer ResetRgbButtonState(sercon)
 	// Write to address 0
-	rwep.WritePass(AddressCommandFlashPage(0))
 	onebyte := make([]byte, 1)
+	rwep.WritePass(AddressCommandFlashPage(0))
 	rwep.ReadPass(onebyte)
 	rwep.WritePass(WriteEepromCommand(uint16(EepromSize)))
 	// Write the WHOLE memory (size of eeprom)
 	rwep.WritePass(data)
+	rwep.ReadPass(onebyte)
 	return rwep.err
 }
 

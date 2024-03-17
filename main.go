@@ -82,7 +82,7 @@ func (c *SketchReadCmd) Run() error {
 	}
 	// Read sketch
 	sercon, d := connectWithBootloader(c.Device)
-	sketch, err := arduboy.ReadSketch(sercon)
+	sketch, err := arduboy.ReadSketch(sercon, true)
 	fatalIfErr(c.Device, "read sketch", err)
 	log.Printf("Read %d bytes from %s\n", len(sketch), d.SmallString())
 	// Open and save file
@@ -96,6 +96,50 @@ func (c *SketchReadCmd) Run() error {
 	result := make(map[string]interface{})
 	result["Filename"] = c.Outfile
 	result["MD5"] = arduboy.Md5String(sketch)
+	PrintJson(result)
+	return nil
+}
+
+// Sketch write command
+type SketchWriteCmd struct {
+	Device string `arg:"" help:"The system device to write to (use 'any' for first)"`
+	Infile string `type:"existingfile" short:"i" help:"File to load hex from"`
+}
+
+func (c *SketchWriteCmd) Run() error {
+	sercon, d := connectWithBootloader(c.Device)
+	// Go find the file first
+	if c.Infile == "" {
+		c.Infile = "sketch.hex"
+	}
+	sketchRaw, err := os.Open(c.Infile)
+	fatalIfErr(c.Device, "read file", err)
+	// Now write the sketch. This includes validation steps
+	sketch, writtenPages, err := arduboy.WriteSketch(sercon, sketchRaw)
+	fatalIfErr(c.Device, "write sketch", err)
+	// Figure out some data to give back to the user about the sketch write
+	numwritten := 0
+	lastWritten := -1
+	contiguous := true
+	for i, w := range writtenPages {
+		if w {
+			numwritten++
+			if lastWritten >= 0 && lastWritten != i-1 {
+				contiguous = false
+			}
+			lastWritten = i
+		}
+	}
+	log.Printf("Wrote %d pages to %s\n", numwritten, d.SmallString())
+	hash := arduboy.Md5String(sketch)
+	// Return data about the eeprom (does this even matter?)
+	result := make(map[string]interface{})
+	result["Filename"] = c.Infile
+	result["MD5"] = hash
+	result["PagesWritten"] = numwritten
+	result["Contiguous"] = contiguous
+	result["SketchSize"] = numwritten * arduboy.FlashPageSize
+	result["TotalWritableFlash"] = len(sketch)
 	PrintJson(result)
 	return nil
 }
@@ -339,6 +383,7 @@ var cli struct {
 	} `cmd:"" help:"Read data from arduboy (sketch/flashcart/eeprom)"`
 	Write struct {
 		Eeprom EepromWriteCmd `cmd:"" help:"Write data to eeprom"`
+		Sketch SketchWriteCmd `cmd:"" help:"Write hex file to arduboy"`
 	} `cmd:"" help:"Write data to arduboy (sketch/flashcart/eeprom)"`
 	Delete struct {
 		Eeprom EepromDeleteCmd `cmd:"" help:"Reset entire eeprom"`

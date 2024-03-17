@@ -118,6 +118,7 @@ func (device *BasicDeviceInfo) SmallString() string {
 type BootloaderInfo struct {
 	Device     string
 	SoftwareId string
+	Startpage  int
 	Length     int
 	IsCaterina bool
 	Version    int
@@ -267,6 +268,8 @@ func GetBootloaderInfo(sercon io.ReadWriter) (*BootloaderInfo, error) {
 	} else {
 		result.Length = CathyTotalSize
 	}
+
+	result.Startpage = (FlashSize - result.Length) / FlashPageSize
 
 	// Now that we have the length, read the bootloader in its entirety
 	var rawbl [CaterinaTotalSize]byte

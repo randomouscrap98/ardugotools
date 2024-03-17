@@ -53,6 +53,10 @@ func ReadFlashcartCommand(length uint16) []byte {
 	return ReadWriteCommandRaw('g', length, 'C')
 }
 
+func WriteFlashCommand(length uint16) []byte {
+	return ReadWriteCommandRaw('B', length, 'F')
+}
+
 // Produce command for reading an amount from eeprom (probably the whole thing though)
 func ReadEepromCommand(length uint16) []byte {
 	return ReadWriteCommandRaw('g', length, 'E')

@@ -2,9 +2,11 @@ package arduboy
 
 import (
 	"bytes"
-	"github.com/marcinbor85/gohex"
+	"fmt"
 	"io"
 	"log"
+
+	"github.com/marcinbor85/gohex"
 )
 
 const (
@@ -120,7 +122,7 @@ func ReadFlash(sercon io.ReadWriter) ([]byte, error) {
 }
 
 // Read the entire sketch, without the bootloader. Also trims the sketch
-func ReadSketch(sercon io.ReadWriter) ([]byte, error) {
+func ReadSketch(sercon io.ReadWriter, trim bool) ([]byte, error) {
 	// Must get the information about the device
 	bootloader, err := GetBootloaderInfo(sercon)
 	if err != nil {
@@ -132,9 +134,98 @@ func ReadSketch(sercon io.ReadWriter) ([]byte, error) {
 	}
 	baseData := flash[:FlashSize-bootloader.Length]
 	baseSize := len(baseData)
-	trimData := TrimUnused(baseData, FlashPageSize)
-	log.Printf("Trimmed sketch removed %d bytes\n", baseSize-len(trimData))
-	return trimData, nil
+	if trim {
+		trimData := TrimUnused(baseData, FlashPageSize)
+		log.Printf("Trimmed sketch removed %d bytes\n", baseSize-len(trimData))
+		return trimData, nil
+	} else {
+		return baseData, nil
+	}
+}
+
+// Writing a sketch is WEIRD because of the intel hex format. The hex file indicates various
+// addresses to write data to, not a giant data blob. In theory, you could supply this function with
+// hex that writes only every other page, or only some pages in the middle. As such, you must provide
+// the raw sketch, not actual binary data, since there might be holes (there most likely aren't).
+// This function reads the entire existing sketch area (everything minus the bootloader) into
+// memory, applies the hex modifications on top, then writes only the modified pages (smallest
+// writable unit) back to the flash memory. We could technically ignore the hex standard and assume
+// no sketch will ever have holes and simplify this dramatically, but I wanted this to be as
+// correct as possible.
+func WriteSketch(sercon io.ReadWriter, rawSketch io.Reader) ([]byte, []bool, error) {
+	// Read the existing sketch area. We will be writing back
+	// ONLY the parts that changed (this is what the intel hex format
+	// is for) Set some RGB for light indication of which stage we're on
+	log.Printf("Reading full sketch + applying hex in-memory")
+	SetRgbButtonState(sercon, LEDCtrlBtnOff|LEDCtrlBlOn)
+	defer ResetRgbButtonState(sercon)
+	sketch, err := ReadSketch(sercon, false)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(sketch)%FlashPageSize > 0 {
+		return nil, nil, fmt.Errorf("PROGRAM ERROR: sketch area not page aligned! Length: %d", len(sketch))
+	}
+	writtenPages := make([]bool, len(sketch)/FlashPageSize)
+	// Scan through the hex and the existing sketch, see if it goes beyond
+	// the bounds. If it does, it's an error.
+	hexmem := gohex.NewMemory()
+	err = hexmem.ParseIntelHex(rawSketch)
+	if err != nil {
+		return nil, nil, err
+	}
+	for _, segment := range hexmem.GetDataSegments() {
+		// Exclusive (the location one past the end of the data)
+		endloc := int(segment.Address + uint32(len(segment.Data)))
+		if endloc > len(sketch) {
+			return nil, nil, fmt.Errorf("Sketch writes outside allowed bounds! At: %d, Max: %d", endloc, len(sketch))
+		}
+		// Max intel hex length is 255. Just to be safe, set written for all touched pages here
+		for p := int(segment.Address); p < endloc; p += FlashPageSize {
+			writtenPages[p/FlashPageSize] = true
+		}
+		copy(sketch[segment.Address:], segment.Data)
+	}
+	// Now write it back page by page. I don't know if this is strictly required, but it's
+	// what the original python scripts did. It's easy enough to change if you can simply
+	// dump the whole thing in there
+	log.Printf("Writing ONLY modified sketch pages")
+	SetRgbButtonState(sercon, LEDCtrlBtnOff|LEDCtrlRdOn)
+	rwep := ReadWriteErrorPass{rw: sercon}
+	onebyte := make([]byte, 1)
+	for p, write := range writtenPages {
+		if write {
+			rwep.WritePass(AddressCommandFlashPage(uint16(p)))
+			rwep.ReadPass(onebyte)
+			rwep.WritePass(WriteFlashCommand(uint16(FlashPageSize)))
+			rwep.WritePass(sketch[p*FlashPageSize : (p+1)*FlashPageSize])
+			rwep.ReadPass(onebyte)
+		}
+	}
+	if rwep.err != nil {
+		return nil, nil, rwep.err
+	}
+	// Finally, verify the pages. This reads the sketch yet AGAIN into memory
+	log.Printf("Validating sketch")
+	SetRgbButtonState(sercon, LEDCtrlBtnOff|LEDCtrlGrOn)
+	newsketch, err := ReadSketch(sercon, false)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(newsketch) != len(sketch) {
+		return nil, nil, fmt.Errorf("Old and new sketch area size doesn't match! Original: %d, New: %d", len(sketch), len(newsketch))
+	}
+	for p := 0; p < len(newsketch); p += FlashPageSize {
+		if !bytes.Equal(sketch[p:p+FlashPageSize], newsketch[p:p+FlashPageSize]) {
+			return nil, nil, fmt.Errorf("VALIDATION FAILED: sketch does not match expected at page %d!", p)
+		}
+	}
+	return newsketch, writtenPages, nil
+}
+
+// Throws an error if sketch on system does not match the given sketch
+func VerifySketch(sercon io.ReadWriter, rawSketch io.Reader) error {
+	return nil
 }
 
 // Convert given byte blob to hex. Does NOT modify the data in any way
