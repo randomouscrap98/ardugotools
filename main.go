@@ -249,14 +249,11 @@ func (c *FlashcartReadCmd) Run() error {
 	length, slots, err := arduboy.ReadWholeFlashcart(sercon, file, true)
 	fatalIfErr(c.Device, "read flashcart", err)
 	log.Printf("Read %d bytes, %d slots from %s, wrote to %s\n", length, slots, d.SmallString(), c.Outfile)
-	//hash := arduboy.Md5String(eeprom)
-	//fatalIfErr(c.Outfile, "write eeprom to file", err)
 	// Return data about the save
 	result := make(map[string]interface{})
 	result["Filename"] = c.Outfile
 	result["Length"] = length
 	result["Slots"] = slots
-	//result["MD5"] = hash
 	PrintJson(result)
 	return nil
 }

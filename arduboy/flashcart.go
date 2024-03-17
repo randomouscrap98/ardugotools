@@ -329,7 +329,11 @@ ScanFlashcartLoop:
 	for {
 		_, err := io.ReadFull(data, headerRaw)
 		if err != nil {
-			return 0, err
+			if err == io.ErrUnexpectedEOF || err == io.EOF {
+				break
+			} else {
+				return 0, err
+			}
 		}
 
 		// Parse the header. It might throw an "acceptable" error.
