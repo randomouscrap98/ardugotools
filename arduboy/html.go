@@ -59,7 +59,7 @@ const FlashcartMetaTemplate = `
 </html>
 `
 
-func RenderFlashcartMeta(categories []HeaderCategory, device *ExtendedDeviceInfo, destination io.Writer) error {
+func RenderFlashcartMeta(categories []HeaderCategory, deviceId string, destination io.Writer) error {
 	funcMap := template.FuncMap{
 		"decodeDataUrl": func(data string) template.URL {
 			return template.URL(data)
@@ -71,7 +71,7 @@ func RenderFlashcartMeta(categories []HeaderCategory, device *ExtendedDeviceInfo
 	}
 	data := make(map[string]interface{})
 	data["Categories"] = categories
-	data["Device"] = device.Bootloader.Device
+	data["Device"] = deviceId //device.Bootloader.Device
 	data["Date"] = time.Now().Format(time.RFC1123)
 	t.Execute(destination, data)
 	return nil

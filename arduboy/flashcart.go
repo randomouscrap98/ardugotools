@@ -194,6 +194,79 @@ func ReadFlashcart(sercon io.ReadWriter, page uint16, length uint16) ([]byte, er
 	return result, err
 }
 
+// Read the entire flashcart slot-by-slot and write it out to the 'output' writer.
+// This is a "smart" reader that scans through slots reading them one by one.
+// This is slightly slower than mindless block reading, but can be overall faster
+// because it's not reading the entire flash memory (plus you can get more
+// interesting logging + data)
+func ReadWholeFlashcart(sercon io.ReadWriter, output io.Writer, logProgress bool) (int, int, error) {
+	headerAddr := 0
+	headerCount := 0
+	headerRaw := make([]byte, FxHeaderLength)
+	maxBuffer := make([]byte, (1<<16)-FXPageSize) // MUST BE PAGE ALIGNED
+	defer ResetRgbButtonState(sercon)
+
+	for {
+		// This should make a fun rainbow... well maybe it'll be fun...
+		var rgbState uint8 = LEDCtrlBtnOff | uint8(headerCount&0b111)
+		SetRgbButtonState(sercon, rgbState)
+
+		// Read the header
+		err := ReadFlashcartInto(sercon, uint16(headerAddr/FXPageSize), headerRaw)
+		if err != nil {
+			return 0, 0, err
+		}
+
+		// Parse the header. It might throw an "acceptable" error.
+		header, _, err := ParseHeader(headerRaw)
+		if err != nil {
+			switch err.(type) {
+			case *NotHeaderError: // This is fine, we're just at the end
+				return headerAddr, headerCount, nil
+			default:
+				return 0, 0, err
+			}
+		}
+
+		if logProgress {
+			log.Printf("[%d] Reading: %s (%s - %s)\n", headerCount, header.Title, header.Developer, header.Version)
+		}
+
+		// Write the header. We'll be reading the rest of the slot now
+		_, err = output.Write(headerRaw)
+		if err != nil {
+			return 0, 0, err
+		}
+
+		// The rest of the slot needs to be read. If for some reason this value
+		// is 0, it will still work with the next loop
+		nextSlot := headerAddr + int(header.SlotPages)*FXPageSize
+		headerAddr += FxHeaderLength
+
+		// Need to do a loop of reading as much as possible for this slot
+		for headerAddr < nextSlot {
+			// read in chunks of maxBuffer length. For sketches, we won't
+			// ever reach the maxBuffer length. Also, the address should
+			// move properly in page chunk sizes, since it's either (a) the
+			// size of the slot (always page aligned) or (b) the maxBuffer
+			// length (which is also page aligned)
+			readBuf := maxBuffer[:min(nextSlot-headerAddr, len(maxBuffer))]
+			err = ReadFlashcartInto(sercon, uint16(headerAddr/FXPageSize), readBuf)
+			if err != nil {
+				return 0, 0, err
+			}
+			_, err = output.Write(readBuf)
+			if err != nil {
+				return 0, 0, err
+			}
+			headerAddr += len(readBuf)
+		}
+
+		// Move to the next header
+		headerCount++
+	}
+}
+
 // Scan through the flashcart, calling the given function for each header
 // parsed. returns the total size of the flashcart and the number of
 // headers read. The function also receives the current header address and

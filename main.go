@@ -186,27 +186,78 @@ func (c *EepromDeleteCmd) Run() error {
 
 // Flashcart scan command
 type FlashcartScanCmd struct {
-	Device string `arg:"" help:"The system device to read from (use 'any' for first)"`
+	Device string `arg:"" help:"The system device OR file to read from (use 'any' for first device)"`
 	Html   bool   `help:"Generate as html instead"`
 	Images bool   `help:"Pull images (takes 4 times as long)"`
 }
 
 func (c *FlashcartScanCmd) Run() error {
-	sercon, d := connectWithBootloader(c.Device)
-	extd := mustHaveFlashcart(sercon, d)
-	result, err := arduboy.ScanFlashcartMeta(sercon, c.Images)
+	var result []arduboy.HeaderCategory
+	deviceIsFile := false
+	deviceId := "" // Some identifiers computed based on file vs device
+	deviceName := ""
+	fileInfo, err := os.Stat(c.Device)
+	deviceIsFile = (err == nil && fileInfo.Mode().IsRegular())
+	// Can scan either flashcart file or the real device
+	if deviceIsFile {
+		log.Printf("%s is a file, scanning file\n", c.Device)
+		data, err := os.Open(c.Device)
+		fatalIfErr(c.Device, "open flashcart file", err)
+		deviceId = c.Device
+		deviceName = c.Device
+		result, err = arduboy.ScanFlashcartFileMeta(data, c.Images)
+		fatalIfErr(c.Device, "scan flashcart (file)", err)
+	} else {
+		sercon, d := connectWithBootloader(c.Device)
+		extd := mustHaveFlashcart(sercon, d)
+		deviceId = extd.Bootloader.Device
+		deviceName = d.SmallString()
+		result, err = arduboy.ScanFlashcartMeta(sercon, c.Images)
+		fatalIfErr(c.Device, "scan flashcart (device)", err)
+	}
 	programs := 0
 	for _, c := range result {
 		programs += len(c.Slots)
 	}
-	fatalIfErr(c.Device, "scan flashcart (basic)", err)
-	log.Printf("Scanned %d categories, %d programs from flashcart on %s\n", len(result), programs, d.SmallString())
+	log.Printf("Scanned %d categories, %d programs from flashcart on %s\n", len(result), programs, deviceName)
 	if c.Html {
-		err = arduboy.RenderFlashcartMeta(result, extd, os.Stdout)
+		err = arduboy.RenderFlashcartMeta(result, deviceId, os.Stdout)
 		fatalIfErr(c.Device, "render flashcart into HTML", err)
 	} else {
 		PrintJson(result)
 	}
+	return nil
+}
+
+// Eeprom read command
+type FlashcartReadCmd struct {
+	Device  string `arg:"" help:"The system device to read from (use 'any' for first)"`
+	Outfile string `type:"path" short:"o"`
+}
+
+func (c *FlashcartReadCmd) Run() error {
+	// Figure out save location
+	if c.Outfile == "" {
+		c.Outfile = fmt.Sprintf("flashcart_%s.bin", FileSafeDateTime())
+	}
+	file, err := os.Create(c.Outfile)
+	fatalIfErr(c.Outfile, "open file for writing", err)
+	defer file.Close()
+	// Read flashcart
+	sercon, d := connectWithBootloader(c.Device)
+	_ = mustHaveFlashcart(sercon, d)
+	length, slots, err := arduboy.ReadWholeFlashcart(sercon, file, true)
+	fatalIfErr(c.Device, "read flashcart", err)
+	log.Printf("Read %d bytes, %d slots from %s, wrote to %s\n", length, slots, d.SmallString(), c.Outfile)
+	//hash := arduboy.Md5String(eeprom)
+	//fatalIfErr(c.Outfile, "write eeprom to file", err)
+	// Return data about the save
+	result := make(map[string]interface{})
+	result["Filename"] = c.Outfile
+	result["Length"] = length
+	result["Slots"] = slots
+	//result["MD5"] = hash
+	PrintJson(result)
 	return nil
 }
 
@@ -285,8 +336,9 @@ var cli struct {
 		Device QueryCmd `cmd:"" help:"Get deeper information about a particular Arduboy"`
 	} `cmd:"" help:"Get deeper information on various things (device, flashcart, etc)"`
 	Read struct {
-		Sketch SketchReadCmd `cmd:"" help:"Read just the sketch portion of flash, saved as a .hex file"`
-		Eeprom EepromReadCmd `cmd:"" help:"Read entire eeprom, saved as a .bin file"`
+		Sketch    SketchReadCmd    `cmd:"" help:"Read just the sketch portion of flash, saved as a .hex file"`
+		Eeprom    EepromReadCmd    `cmd:"" help:"Read entire eeprom, saved as a .bin file"`
+		Flashcart FlashcartReadCmd `cmd:"" help:"Read entire flashcart, saved as a .bin file"`
 	} `cmd:"" help:"Read data from arduboy (sketch/flashcart/eeprom)"`
 	Write struct {
 		Eeprom EepromWriteCmd `cmd:"" help:"Write data to eeprom"`
