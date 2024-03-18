@@ -66,7 +66,17 @@ func WriteEepromCommand(length uint16) []byte {
 	return ReadWriteCommandRaw('B', length, 'E')
 }
 
+// This is bad but whatever: globally disable rgb lights
+var enableRgb = true
+
+func SetRgbEnabledGlobal(enabled bool) {
+	enableRgb = enabled
+}
+
 func RgbButtonCommandRaw(data uint8) []byte {
+	if !enableRgb {
+		data = data & LEDCtrlBtnOff
+	}
 	return []byte{byte('x'), data}
 }
 

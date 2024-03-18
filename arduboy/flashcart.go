@@ -229,7 +229,7 @@ func ReadWholeFlashcart(sercon io.ReadWriter, output io.Writer, logProgress bool
 		}
 
 		if logProgress {
-			log.Printf("[%d] Reading: %s (%s - %s)\n", headerCount, header.Title, header.Developer, header.Version)
+			log.Printf("[%d] Reading: %s (%s - %s)\n", headerCount+1, header.Title, header.Developer, header.Version)
 		}
 
 		// Write the header. We'll be reading the rest of the slot now
