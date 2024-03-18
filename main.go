@@ -448,6 +448,7 @@ var cli struct {
 		Bin2Hex Bin2HexCmd `cmd:"" help:"Convert bin to hex" name:"bin2hex"`
 	} `cmd:"" help:"Convert data formats back and forth (usually all on filesystem)"`
 	Version kong.VersionFlag `help:"Show version information"`
+	Norgb   bool             `help:"Disable all rgb while accessing device"`
 }
 
 func main() {
@@ -459,6 +460,9 @@ func main() {
 			"version": "0.1.0",
 		},
 	)
+	if cli.Norgb {
+		arduboy.SetRgbEnabledGlobal(false)
+	}
 	err := ctx.Run()
 	ctx.FatalIfErrorf(err)
 }
