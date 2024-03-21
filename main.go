@@ -326,7 +326,7 @@ func (c *FlashcartScanCmd) Run() error {
 	return nil
 }
 
-// Eeprom read command
+// Flashcart read command
 type FlashcartReadCmd struct {
 	Device  string `arg:"" help:"The system device to read from (use 'any' for first)"`
 	Outfile string `type:"path" short:"o"`
@@ -352,6 +352,53 @@ func (c *FlashcartReadCmd) Run() error {
 	result["Filename"] = c.Outfile
 	result["Length"] = length
 	result["Slots"] = slots
+	PrintJson(result)
+	return nil
+}
+
+// Flashcart write command
+type FlashcartWriteCmd struct {
+	Device           string `arg:"" help:"The system device to write to (use 'any' for first)"`
+	Infile           string `type:"existingfile" short:"i"`
+	OverrideCapacity int    `help:"Force device capacity (NOT RECOMMENDED)"`
+	Noverify         bool   `help:"Do not verify flashcart (not recommended)"`
+}
+
+func (c *FlashcartWriteCmd) Run() error {
+	// Open arduboy, force flashcart existence
+	sercon, d := connectWithBootloader(c.Device)
+	defer sercon.Close()
+	extdata := mustHaveFlashcart(sercon, d)
+	if c.OverrideCapacity > 0 {
+		// Spooky user desires
+		extdata.Jedec.Capacity = int32(c.OverrideCapacity)
+	}
+	// Figure out save location, open file
+	if c.Infile == "" {
+		c.Infile = fmt.Sprintf("flashcart.bin")
+	}
+	file, err := os.Open(c.Infile)
+	fatalIfErr(c.Infile, "open file for reading", err)
+	defer file.Close()
+	fi, err := file.Stat()
+	fatalIfErr(c.Infile, "check file", err)
+	fileSize := int32(fi.Size())
+	if !extdata.Jedec.FitsFlashcart(fileSize) {
+		log.Fatalf("Flashcart too big for device! Size: %d, capacity: %d\n",
+			fileSize, extdata.Jedec.Capacity)
+	}
+	// Actually write the thing
+	blocks, err := arduboy.WriteWholeFlashcart(sercon, file, !c.Noverify, true)
+	fatalIfErr(c.Device, "write flashcart", err)
+	log.Printf("Finished writing %d blocks to flashcart (%d bytes)\n",
+		blocks, blocks*arduboy.FXBlockSize)
+	// Return data about the save
+	result := make(map[string]interface{})
+	result["Filename"] = c.Infile
+	result["Length"] = fileSize
+	result["Written"] = blocks * arduboy.FXBlockSize
+	result["Capacity"] = extdata.Jedec.Capacity
+	result["Verified"] = !c.Noverify
 	PrintJson(result)
 	return nil
 }
@@ -436,9 +483,10 @@ var cli struct {
 		Flashcart FlashcartReadCmd `cmd:"" help:"Read entire flashcart, saved as a .bin file"`
 	} `cmd:"" help:"Read data from arduboy (sketch/flashcart/eeprom)"`
 	Write struct {
-		Eeprom EepromWriteCmd `cmd:"" help:"Write data to eeprom"`
-		Rawhex RawHexWriteCmd `cmd:"" help:"Write hex file to arduboy precisely as-is"`
-		Sketch SketchWriteCmd `cmd:"" help:"Write arduboy hex file to arduboy (standard procedure)"`
+		Eeprom    EepromWriteCmd    `cmd:"" help:"Write data to eeprom"`
+		Rawhex    RawHexWriteCmd    `cmd:"" help:"Write hex file to arduboy precisely as-is"`
+		Sketch    SketchWriteCmd    `cmd:"" help:"Write arduboy hex file to arduboy (standard procedure)"`
+		Flashcart FlashcartWriteCmd `cmd:"" help:"Write full flashcart to arduboy"`
 	} `cmd:"" help:"Write data to arduboy (sketch/flashcart/eeprom)"`
 	Delete struct {
 		Eeprom EepromDeleteCmd `cmd:"" help:"Reset entire eeprom"`

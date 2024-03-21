@@ -198,7 +198,7 @@ func ReadFlashcart(sercon io.ReadWriter, page uint16, length uint16) ([]byte, er
 // This is a "smart" reader that scans through slots reading them one by one.
 // This is slightly slower than mindless block reading, but can be overall faster
 // because it's not reading the entire flash memory (plus you can get more
-// interesting logging + data)
+// interesting logging + data). NOTE: DOES NOT CHECK FOR FLASHCART EXISTENCE!
 func ReadWholeFlashcart(sercon io.ReadWriter, output io.Writer, logProgress bool) (int, int, error) {
 	headerAddr := 0
 	headerCount := 0
@@ -267,10 +267,104 @@ func ReadWholeFlashcart(sercon io.ReadWriter, output io.Writer, logProgress bool
 	}
 }
 
+// Write an entire flashcart starting at the normal address and going to the end.
+// Does not care about any existing data on the flashcart.
+// NOTE: DOES NOT CHECK FOR FLASHCART EXISTENCE OR SIZE
+func WriteWholeFlashcart(sercon io.ReadWriter, input io.Reader, verify bool, logProgress bool) (int, error) {
+	currentBlock := 0
+	// This writer writes FULL fx blocks (its smallest writable chunk size). This is
+	// beneficial: we will fill unused bytes with 0xFF (there should only be one
+	// instance), and this combined with the multireader:
+	// - makes sure a full page of 0xFF is written at the end
+	// - guarantees the flashcart is "page aligned" even if it's not, because
+	//   technically we're aligning it to the whole dang block
+	bufferRaw := make([]byte, FXBlockSize)
+	compareBuffer := make([]byte, FXBlockSize)
+	onebyte := make([]byte, 1)
+	endPage := make([]byte, FXPageSize)
+	for i := range endPage {
+		endPage[i] = 0xFF
+	}
+	endReader := bytes.NewReader(endPage)
+	flashcartReader := io.MultiReader(input, endReader)
+	rwep := ReadWriteErrorPass{rw: sercon}
+	defer ResetRgbButtonState(sercon)
+
+	running := true
+
+	for running {
+		// This should make a fun rainbow... well maybe it'll be fun...
+		var rgbState uint8 = LEDCtrlBtnOff | uint8(currentBlock&0b111)
+		if currentBlock&0b111 == 0 {
+			// Don't let it be dark ever
+			rgbState |= LEDCtrlRdOn
+		}
+		SetRgbButtonState(sercon, rgbState)
+
+		// Read data from the input
+		actual, err := io.ReadFull(flashcartReader, bufferRaw)
+
+		if err != nil {
+			if err == io.EOF {
+				// You somehow hit the end of file right on the mark. Nice? IDK,
+				// just quit now, nothing else to do (really)
+				break
+			} else if err == io.ErrUnexpectedEOF {
+				// This is the usual end of flashcart. We didn't quite reach a full
+				// blocksize, so fill the rest of the buffer; this will be the last iteration
+				for i := actual; i < len(bufferRaw); i++ {
+					bufferRaw[i] = 0xFF
+				}
+				running = false
+			} else {
+				// Wow, some other error! Fancy... but also we die
+				return 0, err
+			}
+		}
+
+		if logProgress {
+			log.Printf("Writing block %d (%d bytes written)\n", currentBlock, currentBlock*FXBlockSize)
+		}
+
+		// everything uses flashcart pages so....
+		currentPage := uint16(currentBlock * FxPagesPerBlock)
+
+		// Write the data to the device
+		rwep.WritePass(AddressCommandFlashcartPage(currentPage))
+		rwep.ReadPass(onebyte)
+		rwep.WritePass(WriteFlashcartCommand(0)) //Yes, apparently it's 0
+		rwep.WritePass(bufferRaw)
+		rwep.ReadPass(onebyte)
+
+		if rwep.err != nil {
+			return 0, rwep.err
+		}
+
+		// Now verify the data
+		if verify {
+			// Turn off LEDs for... I don't know, SOME kind of indication?
+			SetRgbButtonState(sercon, LEDCtrlBtnOff)
+			err = ReadFlashcartInto(sercon, currentPage, compareBuffer)
+			if err != nil {
+				return 0, err
+			}
+			if !bytes.Equal(bufferRaw, compareBuffer) {
+				return 0, fmt.Errorf("Flashcart validation failed at block %d!", currentBlock)
+			}
+		}
+
+		// Move to the next block
+		currentBlock++
+	}
+
+	return currentBlock, nil
+}
+
 // Scan through the flashcart, calling the given function for each header
 // parsed. returns the total size of the flashcart and the number of
 // headers read. The function also receives the current header address and
-// number of headers previously read (starts with 0)
+// number of headers previously read (starts with 0).
+// NOTE: DOES NOT CHECK FOR FLASHCART EXISTENCE!!!
 func ScanFlashcart(sercon io.ReadWriter, headerFunc func(io.ReadWriter, *FxHeader, int, int) error,
 	flashRate int, flashColor uint8) (int, int, error) {
 	headerAddr := 0

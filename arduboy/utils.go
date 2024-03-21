@@ -39,6 +39,10 @@ func AddressCommandFlashcartPage(page uint16) []byte {
 	return AddressCommandRaw(page) //No change
 }
 
+func AddressCommandFlashcartBlock(block uint16) []byte {
+	return AddressCommandRaw(block * uint16(FxPagesPerBlock))
+}
+
 func ReadWriteCommandRaw(mode rune, length uint16, device rune) []byte {
 	return []byte{byte(mode), byte(length >> 8), byte(length & 0xFF), byte(device)}
 }
@@ -48,13 +52,17 @@ func ReadFlashCommand(length uint16) []byte {
 	return ReadWriteCommandRaw('g', length, 'F')
 }
 
+func WriteFlashCommand(length uint16) []byte {
+	return ReadWriteCommandRaw('B', length, 'F')
+}
+
 // Produce command for reading an amount from the flashcart
 func ReadFlashcartCommand(length uint16) []byte {
 	return ReadWriteCommandRaw('g', length, 'C')
 }
 
-func WriteFlashCommand(length uint16) []byte {
-	return ReadWriteCommandRaw('B', length, 'F')
+func WriteFlashcartCommand(length uint16) []byte {
+	return ReadWriteCommandRaw('B', length, 'C')
 }
 
 // Produce command for reading an amount from eeprom (probably the whole thing though)

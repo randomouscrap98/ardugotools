@@ -103,6 +103,12 @@ type JedecInfo struct {
 	Manufacturer string
 }
 
+// Whether this jedec info will fit a flashcart of given size. there are
+// caveats to fitting a flashcart (it must end with an empty page and whatever)
+func (j *JedecInfo) FitsFlashcart(size int32) bool {
+	return size+int32(FXPageSize) <= j.Capacity
+}
+
 type BasicDeviceInfo struct {
 	VidPid       string
 	Port         string
