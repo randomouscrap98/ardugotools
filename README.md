@@ -6,9 +6,9 @@ A CLI toolset for Arduboy
 
 - Scan for connected devices
 - Analyze connected devices
-- Read sketch, eeprom, ~flashcart~
-- Write ~sketch~, eeprom, ~flashcart~
-- Analyze flashcart
+- Read sketch, eeprom, flashcart
+- Write sketch, eeprom, flashcart
+- Scan flashcart
 - Convert between various data formats
 
 (More to come)
@@ -19,4 +19,3 @@ A CLI toolset for Arduboy
 go build
 ./ardugotools --help
 ```
-
