@@ -529,14 +529,18 @@ func ScanFlashcartMeta(sercon io.ReadWriter, getImages bool) ([]HeaderCategory, 
 				return err
 			}
 			go func() {
-				outbytes := RawToGrayscale(imgbytes, 0, 255)
+				outbytes, err := RawToGrayscale(imgbytes, 0, 255)
+				if err != nil {
+					errchan <- err
+					return
+				}
 				pngraw, err := GrayscaleToPng(outbytes)
 				if err != nil {
 					errchan <- err
-				} else {
-					*writeimg = "data:image/png;base64," + base64.StdEncoding.EncodeToString(pngraw)
-					errchan <- nil
+					return
 				}
+				*writeimg = "data:image/png;base64," + base64.StdEncoding.EncodeToString(pngraw)
+				errchan <- nil
 			}()
 		}
 		return nil
@@ -586,13 +590,15 @@ func ScanFlashcartFileMeta(data io.ReadSeeker, getImages bool) ([]HeaderCategory
 			if err != nil {
 				return err
 			}
-			outbytes := RawToGrayscale(imageRaw, 0, 255)
+			outbytes, err := RawToGrayscale(imageRaw, 0, 255)
+			if err != nil {
+				return err
+			}
 			pngraw, err := GrayscaleToPng(outbytes)
 			if err != nil {
 				return err
-			} else {
-				*writeimg = "data:image/png;base64," + base64.StdEncoding.EncodeToString(pngraw)
 			}
+			*writeimg = "data:image/png;base64," + base64.StdEncoding.EncodeToString(pngraw)
 		}
 		return nil
 	}

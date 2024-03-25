@@ -407,6 +407,7 @@ func (c *FlashcartWriteCmd) Run() error {
 // *       CONVERT COMMANDS         *
 // **********************************
 
+// ------------ Sketches --------------
 type Hex2BinCmd struct {
 	Outfile string `type:"path" short:"o"`
 	Infile  string `type:"existingfile" short:"i"`
@@ -465,6 +466,68 @@ func (c *Bin2HexCmd) Run() error {
 	return nil
 }
 
+// ----------------- Images -------------------
+type Img2BinCmd struct {
+	Outfile string `type:"path" short:"o"`
+	Infile  string `type:"existingfile" short:"i"`
+}
+
+func (c *Img2BinCmd) Run() error {
+	if c.Infile == "" {
+		c.Infile = "image.png"
+	}
+	if c.Outfile == "" {
+		c.Outfile = fmt.Sprintf("image_img2bin_%s.bin", FileSafeDateTime())
+	}
+
+	sketch, err := os.Open(c.Infile)
+	fatalIfErr("hex2bin", "read hex file", err)
+	defer sketch.Close()
+	bin, err := arduboy.HexToBin(sketch)
+	fatalIfErr("hex2bin", "convert hex", err)
+	dest, err := os.Create(c.Outfile)
+	fatalIfErr("hex2bin", "write file", err)
+	defer dest.Close()
+	dest.Write(bin)
+	result := make(map[string]interface{})
+	result["Infile"] = c.Infile
+	result["Outfile"] = c.Outfile
+	result["Bytes"] = len(bin)
+	result["MD5"] = arduboy.Md5String(bin)
+	PrintJson(result)
+	return nil
+}
+
+type Bin2ImgCmd struct {
+	Outfile string `type:"path" short:"o"`
+	Infile  string `type:"existingfile" short:"i"`
+}
+
+func (c *Bin2ImgCmd) Run() error {
+	if c.Infile == "" {
+		c.Infile = "image.bin"
+	}
+	if c.Outfile == "" {
+		c.Outfile = fmt.Sprintf("image_bin2img_%s.png", FileSafeDateTime())
+	}
+	raw, err := os.ReadFile(c.Infile)
+	fatalIfErr("bin2img", "read bin file", err)
+	// the colors may be settable later
+	grayscale, err := arduboy.RawToGrayscale(raw, 0, 255)
+	fatalIfErr("bin2img", "convert to grayscale", err)
+	grayscalepng, err := arduboy.GrayscaleToPng(grayscale)
+	fatalIfErr("bin2img", "convert bin to png", err)
+	err = os.WriteFile(c.Outfile, grayscalepng, 0644)
+	fatalIfErr("bin2img", "write file", err)
+	result := make(map[string]interface{})
+	result["Infile"] = c.Infile
+	result["Outfile"] = c.Outfile
+	result["Bytes"] = len(raw)
+	result["MD5"] = arduboy.Md5String(raw)
+	PrintJson(result)
+	return nil
+}
+
 // **********************************
 // *    ALL TOGETHER COMMANDS       *
 // **********************************
@@ -494,6 +557,7 @@ var cli struct {
 	Convert struct {
 		Hex2Bin Hex2BinCmd `cmd:"" help:"Convert hex to bin" name:"hex2bin"`
 		Bin2Hex Bin2HexCmd `cmd:"" help:"Convert bin to hex" name:"bin2hex"`
+		Bin2Img Bin2ImgCmd `cmd:"" help:"Convert 1024 byte bin to png img" name:"bin2img"`
 	} `cmd:"" help:"Convert data formats back and forth (usually all on filesystem)"`
 	Version kong.VersionFlag `help:"Show version information"`
 	Norgb   bool             `help:"Disable all rgb while accessing device"`
