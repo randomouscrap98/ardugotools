@@ -564,36 +564,35 @@ func (c *Img2ImgCmd) Run() error {
 // **********************************
 
 var cli struct {
-	Scan struct {
-		Devices   ScanCmd          `cmd:"" help:"Search for Arduboys and return basic information on them"`
-		Flashcart FlashcartScanCmd `cmd:"" help:"Scan flashcart and return categories/games"`
-	} `cmd:"" help:"Get cursory information on various things (devices, flashcart, etc)"`
-	Analyze struct {
-		Device QueryCmd `cmd:"" help:"Get deeper information about a particular Arduboy"`
+	Device struct {
+		Scan  ScanCmd  `cmd:"" help:"Search for Arduboys and return basic information on them"`
+		Query QueryCmd `cmd:"" help:"Get deeper information about a particular Arduboy"`
+	} `cmd:"" help:"Commands which retrieve information about devices"`
+	Sketch struct {
+		Read     SketchReadCmd  `cmd:"" help:"Read just the sketch portion of flash, saved as a .hex file"`
+		Write    SketchWriteCmd `cmd:"" help:"Write arduboy hex file to arduboy (standard procedure)"`
+		WriteRaw RawHexWriteCmd `cmd:"" help:"Write hex file to arduboy precisely as-is"`
+		Hex2Bin  Hex2BinCmd     `cmd:"" help:"Convert sketch hex to bin" name:"hex2bin"`
+		Bin2Hex  Bin2HexCmd     `cmd:"" help:"Convert sketch bin to hex" name:"bin2hex"`
+		// Could analyze sketch to figure out what device it might be for
+	} `cmd:"" help:"Commands which work directly on sketches, whether on device or filesystem"`
+	Eeprom struct {
+		Read   EepromReadCmd   `cmd:"" help:"Read entire eeprom, saved as a .bin file"`
+		Write  EepromWriteCmd  `cmd:"" help:"Write data to eeprom"`
+		Delete EepromDeleteCmd `cmd:"" help:"Reset entire eeprom"`
+	} `cmd:"" help:"Commands which work directly on eeprom, whether on device or filesystem"`
+	Flashcart struct {
+		Scan  FlashcartScanCmd  `cmd:"" help:"Scan flashcart and return categories/games (works on files too)"`
+		Read  FlashcartReadCmd  `cmd:"" help:"Read entire flashcart, saved as a .bin file"`
+		Write FlashcartWriteCmd `cmd:"" help:"Write full flashcart to arduboy"`
 		// Could analyze flashcart to figure out what device it might be for, and whether
 		// it's technically invalid
-	} `cmd:"" help:"Get deeper information on various things (device, flashcart, etc)"`
-	Read struct {
-		Sketch    SketchReadCmd    `cmd:"" help:"Read just the sketch portion of flash, saved as a .hex file"`
-		Eeprom    EepromReadCmd    `cmd:"" help:"Read entire eeprom, saved as a .bin file"`
-		Flashcart FlashcartReadCmd `cmd:"" help:"Read entire flashcart, saved as a .bin file"`
-	} `cmd:"" help:"Read data from arduboy (sketch/flashcart/eeprom)"`
-	Write struct {
-		Eeprom    EepromWriteCmd    `cmd:"" help:"Write data to eeprom"`
-		Rawhex    RawHexWriteCmd    `cmd:"" help:"Write hex file to arduboy precisely as-is"`
-		Sketch    SketchWriteCmd    `cmd:"" help:"Write arduboy hex file to arduboy (standard procedure)"`
-		Flashcart FlashcartWriteCmd `cmd:"" help:"Write full flashcart to arduboy"`
-	} `cmd:"" help:"Write data to arduboy (sketch/flashcart/eeprom)"`
-	Delete struct {
-		Eeprom EepromDeleteCmd `cmd:"" help:"Reset entire eeprom"`
-	} `cmd:"" help:"Delete data on arduboy (eeprom)"`
-	Convert struct {
-		Hex2Bin Hex2BinCmd `cmd:"" help:"Convert sketch hex to bin" name:"hex2bin"`
-		Bin2Hex Bin2HexCmd `cmd:"" help:"Convert sketch bin to hex" name:"bin2hex"`
-		Bin2Img Bin2ImgCmd `cmd:"" help:"Convert 1024 byte bin to png img" name:"bin2img"`
-		Img2Bin Img2BinCmd `cmd:"" help:"Convert any image to arduboy 1024 byte bin format" name:"img2bin"`
-		Image   Img2ImgCmd `cmd:"" help:"Convert any image to a 2 color 128x64 black and white image" name:"image"`
-	} `cmd:"" help:"Convert data formats back and forth (usually all on filesystem)"`
+	} `cmd:"" help:"Commands which work directly on flashcarts, whether on device or filesystem"`
+	Image struct {
+		Bin2Img   Bin2ImgCmd `cmd:"" help:"Convert 1024 byte bin to png img" name:"bin2img"`
+		Img2Bin   Img2BinCmd `cmd:"" help:"Convert any image to arduboy 1024 byte bin format" name:"img2bin"`
+		Img2Title Img2ImgCmd `cmd:"" help:"Convert any image to a 2 color 128x64 black and white image" name:"img2title"`
+	} `cmd:"" help:"Commands which work directly on images, such as titles or spritesheets"`
 	Version kong.VersionFlag `help:"Show version information"`
 	Norgb   bool             `help:"Disable all rgb while accessing device"`
 }
