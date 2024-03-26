@@ -8,6 +8,8 @@ ardugotools
 *.json
 *.html
 *.png
+*.gif
+*.jpg
 ignore/
 adhoc/found_chunks/
 adhoc/adhoc

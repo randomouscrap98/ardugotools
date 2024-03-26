@@ -594,11 +594,11 @@ func ScanFlashcartFileMeta(data io.ReadSeeker, getImages bool) ([]HeaderCategory
 			if err != nil {
 				return err
 			}
-			pngraw, err := PalettedToImageBW(outbytes, "gif")
+			pngraw, err := PalettedToImageBW(outbytes, "png")
 			if err != nil {
 				return err
 			}
-			*writeimg = "data:image/gif;base64," + base64.StdEncoding.EncodeToString(pngraw)
+			*writeimg = "data:image/png;base64," + base64.StdEncoding.EncodeToString(pngraw)
 		}
 		return nil
 	}

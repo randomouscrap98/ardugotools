@@ -7,6 +7,7 @@ import (
 	"os"
 
 	"github.com/alecthomas/kong"
+	"github.com/mazznoer/csscolorparser"
 	"github.com/randomouscrap98/ardugotools/arduboy"
 )
 
@@ -53,7 +54,7 @@ func (c *ScanCmd) Run() error {
 
 // Query command
 type QueryCmd struct {
-	Device string `arg:"" help:"The system device to check (use 'any' for first)"`
+	Device string `arg:"" default:"any" help:"The system device to check (use 'any' for first)"`
 }
 
 func (c *QueryCmd) Run() error {
@@ -72,7 +73,7 @@ func (c *QueryCmd) Run() error {
 
 // Sketch read command
 type SketchReadCmd struct {
-	Device  string `arg:"" help:"The system device to read from (use 'any' for first)"`
+	Device  string `arg:"" default:"any" help:"The system device to read from (use 'any' for first)"`
 	Outfile string `type:"path" short:"o"`
 }
 
@@ -105,8 +106,8 @@ func (c *SketchReadCmd) Run() error {
 
 // Raw Hex write command
 type RawHexWriteCmd struct {
-	Device string `arg:"" help:"The system device to write to (use 'any' for first)"`
-	Infile string `type:"existingfile" short:"i" help:"File to load hex from"`
+	Device string `arg:"" default:"any" help:"The system device to write to (use 'any' for first)"`
+	Infile string `type:"existingfile" default:"sketch.hex" short:"i" help:"File to load hex from"`
 	Runnow bool   `help:"Run sketch immediately"`
 }
 
@@ -114,9 +115,6 @@ func (c *RawHexWriteCmd) Run() error {
 	sercon, d := connectWithBootloader(c.Device)
 	defer sercon.Close()
 	// Go find the file first
-	if c.Infile == "" {
-		c.Infile = "sketch.hex"
-	}
 	sketchRaw, err := os.Open(c.Infile)
 	fatalIfErr(c.Device, "read file", err)
 	// Now write the sketch. This includes validation steps
@@ -154,8 +152,8 @@ func (c *RawHexWriteCmd) Run() error {
 
 // Sketch write command (use this one)
 type SketchWriteCmd struct {
-	Device string `arg:"" help:"The system device to write to (use 'any' for first)"`
-	Infile string `type:"existingfile" short:"i" help:"File to load hex from"`
+	Device string `arg:"" default:"any" help:"The system device to write to (use 'any' for first)"`
+	Infile string `type:"existingfile" default:"sketch.hex" short:"i" help:"File to load hex from"`
 	Runnow bool   `help:"Run sketch immediately"`
 }
 
@@ -163,9 +161,6 @@ func (c *SketchWriteCmd) Run() error {
 	sercon, d := connectWithBootloader(c.Device)
 	defer sercon.Close()
 	// Go find the file first
-	if c.Infile == "" {
-		c.Infile = "sketch.hex"
-	}
 	sketchRaw, err := os.Open(c.Infile)
 	fatalIfErr(c.Device, "read file", err)
 	// Now write the sketch. This includes validation steps
@@ -200,7 +195,7 @@ func (c *SketchWriteCmd) Run() error {
 
 // Eeprom read command
 type EepromReadCmd struct {
-	Device  string `arg:"" help:"The system device to read from (use 'any' for first)"`
+	Device  string `arg:"" default:"any" help:"The system device to read from (use 'any' for first)"`
 	Outfile string `type:"path" short:"o"`
 }
 
@@ -236,17 +231,14 @@ func (c *EepromReadCmd) Run() error {
 
 // Eeprom write command
 type EepromWriteCmd struct {
-	Device string `arg:"" help:"The system device to read from (use 'any' for first)"`
-	Infile string `type:"existingfile" short:"i"`
+	Device string `arg:"" default:"any" help:"The system device to read from (use 'any' for first)"`
+	Infile string `type:"existingfile" default:"eeprom.bin" short:"i"`
 }
 
 func (c *EepromWriteCmd) Run() error {
 	sercon, d := connectWithBootloader(c.Device)
 	defer sercon.Close()
 	// Go find the file first
-	if c.Infile == "" {
-		c.Infile = "eeprom.bin"
-	}
 	eeprom, err := os.ReadFile(c.Infile)
 	fatalIfErr(c.Device, "read file", err)
 	log.Printf("Read %d bytes from file %s\n", len(eeprom), c.Infile)
@@ -265,7 +257,7 @@ func (c *EepromWriteCmd) Run() error {
 
 // Eeprom delete command
 type EepromDeleteCmd struct {
-	Device string `arg:"" help:"The system device to read from (use 'any' for first)"`
+	Device string `arg:"" default:"any" help:"The system device to read from (use 'any' for first)"`
 }
 
 func (c *EepromDeleteCmd) Run() error {
@@ -283,7 +275,7 @@ func (c *EepromDeleteCmd) Run() error {
 
 // Flashcart scan command
 type FlashcartScanCmd struct {
-	Device string `arg:"" help:"The system device OR file to read from (use 'any' for first device)"`
+	Device string `arg:"" default:"any" help:"The system device OR file to read from (use 'any' for first device)"`
 	Html   bool   `help:"Generate as html instead"`
 	Images bool   `help:"Pull images (takes 4 times as long)"`
 }
@@ -328,7 +320,7 @@ func (c *FlashcartScanCmd) Run() error {
 
 // Flashcart read command
 type FlashcartReadCmd struct {
-	Device  string `arg:"" help:"The system device to read from (use 'any' for first)"`
+	Device  string `arg:"" default:"any" help:"The system device to read from (use 'any' for first)"`
 	Outfile string `type:"path" short:"o"`
 }
 
@@ -358,8 +350,8 @@ func (c *FlashcartReadCmd) Run() error {
 
 // Flashcart write command
 type FlashcartWriteCmd struct {
-	Device           string `arg:"" help:"The system device to write to (use 'any' for first)"`
-	Infile           string `type:"existingfile" short:"i"`
+	Device           string `arg:"" default:"any" help:"The system device to write to (use 'any' for first)"`
+	Infile           string `type:"existingfile" default:"flashcart.bin" short:"i"`
 	OverrideCapacity int    `help:"Force device capacity (NOT RECOMMENDED)"`
 	Noverify         bool   `help:"Do not verify flashcart (not recommended)"`
 }
@@ -374,9 +366,6 @@ func (c *FlashcartWriteCmd) Run() error {
 		extdata.Jedec.Capacity = int32(c.OverrideCapacity)
 	}
 	// Figure out save location, open file
-	if c.Infile == "" {
-		c.Infile = fmt.Sprintf("flashcart.bin")
-	}
 	file, err := os.Open(c.Infile)
 	fatalIfErr(c.Infile, "open file for reading", err)
 	defer file.Close()
@@ -410,13 +399,10 @@ func (c *FlashcartWriteCmd) Run() error {
 // ------------ Sketches --------------
 type Hex2BinCmd struct {
 	Outfile string `type:"path" short:"o"`
-	Infile  string `type:"existingfile" short:"i"`
+	Infile  string `type:"existingfile" default:"sketch.hex" short:"i"`
 }
 
 func (c *Hex2BinCmd) Run() error {
-	if c.Infile == "" {
-		c.Infile = "sketch.hex"
-	}
 	if c.Outfile == "" {
 		c.Outfile = fmt.Sprintf("sketch_hex2bin_%s.bin", FileSafeDateTime())
 	}
@@ -432,7 +418,7 @@ func (c *Hex2BinCmd) Run() error {
 	result := make(map[string]interface{})
 	result["Infile"] = c.Infile
 	result["Outfile"] = c.Outfile
-	result["Bytes"] = len(bin)
+	result["Length"] = len(bin)
 	result["MD5"] = arduboy.Md5String(bin)
 	PrintJson(result)
 	return nil
@@ -440,13 +426,10 @@ func (c *Hex2BinCmd) Run() error {
 
 type Bin2HexCmd struct {
 	Outfile string `type:"path" short:"o"`
-	Infile  string `type:"existingfile" short:"i"`
+	Infile  string `type:"existingfile" default:"sketch.bin" short:"i"`
 }
 
 func (c *Bin2HexCmd) Run() error {
-	if c.Infile == "" {
-		c.Infile = "sketch.bin"
-	}
 	if c.Outfile == "" {
 		c.Outfile = fmt.Sprintf("sketch_bin2hex_%s.hex", FileSafeDateTime())
 	}
@@ -460,7 +443,7 @@ func (c *Bin2HexCmd) Run() error {
 	result := make(map[string]interface{})
 	result["Infile"] = c.Infile
 	result["Outfile"] = c.Outfile
-	result["Bytes"] = len(sketch)
+	result["Length"] = len(sketch)
 	result["MD5"] = arduboy.Md5String(sketch)
 	PrintJson(result)
 	return nil
@@ -468,31 +451,31 @@ func (c *Bin2HexCmd) Run() error {
 
 // ----------------- Images -------------------
 type Img2BinCmd struct {
-	Outfile string `type:"path" short:"o"`
-	Infile  string `type:"existingfile" short:"i"`
+	Outfile   string `type:"path" short:"o"`
+	Infile    string `default:"image.png" type:"existingfile" short:"i"`
+	Threshold uint8  `default:"100" help:"White threshold (grayscale value)"`
 }
 
 func (c *Img2BinCmd) Run() error {
-	if c.Infile == "" {
-		c.Infile = "image.png"
-	}
 	if c.Outfile == "" {
 		c.Outfile = fmt.Sprintf("image_img2bin_%s.bin", FileSafeDateTime())
 	}
-
-	sketch, err := os.Open(c.Infile)
-	fatalIfErr("hex2bin", "read hex file", err)
-	defer sketch.Close()
-	bin, err := arduboy.HexToBin(sketch)
-	fatalIfErr("hex2bin", "convert hex", err)
-	dest, err := os.Create(c.Outfile)
-	fatalIfErr("hex2bin", "write file", err)
-	defer dest.Close()
-	dest.Write(bin)
+	img, err := os.Open(c.Infile)
+	fatalIfErr("img2bin", "read image file", err)
+	defer img.Close()
+	stat, err := img.Stat()
+	fatalIfErr("img2bin", "getFileInfo", err)
+	paletted, err := arduboy.ImageToPaletted(img, c.Threshold)
+	fatalIfErr("img2bin", "convert image to palette", err)
+	bin, err := arduboy.PalettedToRaw(paletted)
+	fatalIfErr("img2bin", "convert palette to raw", err)
+	err = os.WriteFile(c.Outfile, bin, 0644)
+	fatalIfErr("img2bin", "write file", err)
 	result := make(map[string]interface{})
 	result["Infile"] = c.Infile
 	result["Outfile"] = c.Outfile
-	result["Bytes"] = len(bin)
+	result["BinLength"] = len(bin)
+	result["ImageLength"] = stat.Size()
 	result["MD5"] = arduboy.Md5String(bin)
 	PrintJson(result)
 	return nil
@@ -500,30 +483,71 @@ func (c *Img2BinCmd) Run() error {
 
 type Bin2ImgCmd struct {
 	Outfile string `type:"path" short:"o"`
-	Infile  string `type:"existingfile" short:"i"`
+	Infile  string `type:"existingfile" default:"image.bin" short:"i"`
+	Format  string `enum:"png,gif,bmp,jpg" default:"png" help:"Image output format"`
+	Black   string `default:"#000000" help:"Color to use for black"`
+	White   string `default:"#FFFFFF" help:"Color to use for white"`
 }
 
 func (c *Bin2ImgCmd) Run() error {
-	if c.Infile == "" {
-		c.Infile = "image.bin"
-	}
 	if c.Outfile == "" {
-		c.Outfile = fmt.Sprintf("image_bin2img_%s.png", FileSafeDateTime())
+		c.Outfile = fmt.Sprintf("image_bin2img_%s.%s", FileSafeDateTime(), c.Format)
 	}
 	raw, err := os.ReadFile(c.Infile)
 	fatalIfErr("bin2img", "read bin file", err)
 	paletted, err := arduboy.RawToPaletted(raw)
 	fatalIfErr("bin2img", "convert to paletted", err)
-	// the colors may be settable later
-	grayscalepng, err := arduboy.PalettedToImageBW(paletted, "png")
-	fatalIfErr("bin2img", "convert paletted to png", err)
-	err = os.WriteFile(c.Outfile, grayscalepng, 0644)
+	black, err := csscolorparser.Parse(c.Black)
+	fatalIfErr("bin2img", "parse black color", err)
+	white, err := csscolorparser.Parse(c.White)
+	fatalIfErr("bin2img", "parse white color", err)
+	imageraw, err := arduboy.PalettedToImage(paletted, black, white, c.Format)
+	fatalIfErr("bin2img", "convert paletted to "+c.Format, err)
+	err = os.WriteFile(c.Outfile, imageraw, 0644)
 	fatalIfErr("bin2img", "write file", err)
 	result := make(map[string]interface{})
 	result["Infile"] = c.Infile
 	result["Outfile"] = c.Outfile
-	result["Bytes"] = len(raw)
+	result["BinLength"] = len(raw)
+	result["ImageLength"] = len(imageraw)
 	result["MD5"] = arduboy.Md5String(raw)
+	PrintJson(result)
+	return nil
+}
+
+type Img2ImgCmd struct {
+	Outfile   string `type:"path" short:"o"`
+	Infile    string `type:"existingfile" default:"image.png" short:"i"`
+	Format    string `enum:"png,gif,bmp,jpg" default:"png" help:"Image output format"`
+	Black     string `default:"#000000" help:"Color to use for black"`
+	White     string `default:"#FFFFFF" help:"Color to use for white"`
+	Threshold uint8  `default:"100" help:"White threshold (grayscale value)"`
+}
+
+func (c *Img2ImgCmd) Run() error {
+	if c.Outfile == "" {
+		c.Outfile = fmt.Sprintf("image_convert_%s.%s", FileSafeDateTime(), c.Format)
+	}
+	original, err := os.Open(c.Infile)
+	fatalIfErr("img2img", "read image file", err)
+	defer original.Close()
+	stat, err := original.Stat()
+	fatalIfErr("img2bin", "getFileInfo", err)
+	paletted, err := arduboy.ImageToPaletted(original, c.Threshold)
+	fatalIfErr("img2img", "convert to paletted", err)
+	black, err := csscolorparser.Parse(c.Black)
+	fatalIfErr("img2img", "parse black color", err)
+	white, err := csscolorparser.Parse(c.White)
+	fatalIfErr("img2img", "parse white color", err)
+	imageraw, err := arduboy.PalettedToImage(paletted, black, white, c.Format)
+	fatalIfErr("img2img", "convert paletted to "+c.Format, err)
+	err = os.WriteFile(c.Outfile, imageraw, 0644)
+	fatalIfErr("img2img", "write file", err)
+	result := make(map[string]interface{})
+	result["Infile"] = c.Infile
+	result["Outfile"] = c.Outfile
+	result["InputImageLength"] = stat.Size()
+	result["OutputImageLength"] = len(imageraw)
 	PrintJson(result)
 	return nil
 }
@@ -558,6 +582,8 @@ var cli struct {
 		Hex2Bin Hex2BinCmd `cmd:"" help:"Convert hex to bin" name:"hex2bin"`
 		Bin2Hex Bin2HexCmd `cmd:"" help:"Convert bin to hex" name:"bin2hex"`
 		Bin2Img Bin2ImgCmd `cmd:"" help:"Convert 1024 byte bin to png img" name:"bin2img"`
+		Img2Bin Img2BinCmd `cmd:"" help:"Convert any image to arduboy 1024 byte bin format" name:"img2bin"`
+		Image   Img2ImgCmd `cmd:"" help:"Convert any image to a 2 color 128x64 black and white image" name:"image"`
 	} `cmd:"" help:"Convert data formats back and forth (usually all on filesystem)"`
 	Version kong.VersionFlag `help:"Show version information"`
 	Norgb   bool             `help:"Disable all rgb while accessing device"`

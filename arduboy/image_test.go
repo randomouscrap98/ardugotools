@@ -44,14 +44,26 @@ func imageToRawTransparent(t *testing.T, format string) {
 		if err != nil {
 			t.Errorf("Error generating %s! %s", format, err)
 		}
-		raw2, err := ImageToRaw(bytes.NewReader(img), 100)
+		paletted, err := ImageToPaletted(bytes.NewReader(img), 100)
 		if err != nil {
-			t.Errorf("Error generating raw from %s! %s", format, err)
+			t.Errorf("Error generating paletted from %s! %s", format, err)
+		}
+		raw2, err := PalettedToRaw(paletted)
+		if err != nil {
+			t.Errorf("Error generating raw from paletted! %s", err)
 		}
 		if !bytes.Equal(raw, raw2) {
 			t.Errorf("%s not transparent!", format)
 		}
 	}
+}
+
+func TestRawToImage_Gif_Transparent(t *testing.T) {
+	imageToRawTransparent(t, "gif")
+}
+
+func TestRawToImage_Png_Transparent(t *testing.T) {
+	imageToRawTransparent(t, "png")
 }
 
 func TestRawToPaletted_IncorrectSize(t *testing.T) {
