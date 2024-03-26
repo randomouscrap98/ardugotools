@@ -512,11 +512,11 @@ func (c *Bin2ImgCmd) Run() error {
 	}
 	raw, err := os.ReadFile(c.Infile)
 	fatalIfErr("bin2img", "read bin file", err)
+	paletted, err := arduboy.RawToPaletted(raw)
+	fatalIfErr("bin2img", "convert to paletted", err)
 	// the colors may be settable later
-	grayscale, err := arduboy.RawToGrayscale(raw, 0, 255)
-	fatalIfErr("bin2img", "convert to grayscale", err)
-	grayscalepng, err := arduboy.GrayscaleToPng(grayscale)
-	fatalIfErr("bin2img", "convert bin to png", err)
+	grayscalepng, err := arduboy.PalettedToImageBW(paletted, "png")
+	fatalIfErr("bin2img", "convert paletted to png", err)
 	err = os.WriteFile(c.Outfile, grayscalepng, 0644)
 	fatalIfErr("bin2img", "write file", err)
 	result := make(map[string]interface{})

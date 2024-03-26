@@ -7,7 +7,7 @@ import (
 	"testing"
 )
 
-func TestRawToGrayscale_Transparent(t *testing.T) {
+func TestRawToPaletted_Transparent(t *testing.T) {
 	raw := make([]byte, ScreenBytes)
 
 	for i := 0; i < 100; i++ {
@@ -15,53 +15,53 @@ func TestRawToGrayscale_Transparent(t *testing.T) {
 		if err != nil {
 			t.Errorf("Error generating random bytes! %s", err)
 		}
-		gray, err := RawToGrayscale(raw, 0, 255)
+		gray, err := RawToPaletted(raw)
 		if err != nil {
-			t.Errorf("Error generating grayscale! %s", err)
+			t.Errorf("Error generating paletted! %s", err)
 		}
-		raw2, err := GrayscaleToRaw(gray, 100)
+		raw2, err := PalettedToRaw(gray)
 		if err != nil {
-			t.Errorf("Error generating raw from grayscale! %s", err)
+			t.Errorf("Error generating raw from paletted! %s", err)
 		}
 		if !bytes.Equal(raw, raw2) {
-			t.Errorf("Not transparent!")
+			t.Errorf("Paletted not transparent!")
 		}
 	}
 }
 
-func TestRawToGrayscale_ImageToRaw_Transparent(t *testing.T) {
+func imageToRawTransparent(t *testing.T, format string) {
 	raw := make([]byte, ScreenBytes)
 	for i := 0; i < 100; i++ {
 		_, err := rand.Read(raw)
 		if err != nil {
 			t.Errorf("Error generating random bytes! %s", err)
 		}
-		gray, err := RawToGrayscale(raw, 0, 255)
+		gray, err := RawToPaletted(raw)
 		if err != nil {
-			t.Errorf("Error generating grayscale! %s", err)
+			t.Errorf("Error generating paletted! %s", err)
 		}
-		graypng, err := GrayscaleToPng(gray)
+		img, err := PalettedToImageBW(gray, format)
 		if err != nil {
-			t.Errorf("Error generating png! %s", err)
+			t.Errorf("Error generating %s! %s", format, err)
 		}
-		raw2, err := ImageToRaw(bytes.NewReader(graypng), 100)
+		raw2, err := ImageToRaw(bytes.NewReader(img), 100)
 		if err != nil {
-			t.Errorf("Error generating raw from png! %s", err)
+			t.Errorf("Error generating raw from %s! %s", format, err)
 		}
 		if !bytes.Equal(raw, raw2) {
-			t.Errorf("Not transparent!")
+			t.Errorf("%s not transparent!", format)
 		}
 	}
 }
 
-func TestRawToGrayscale_IncorrectSize(t *testing.T) {
+func TestRawToPaletted_IncorrectSize(t *testing.T) {
 	raw := make([]byte, ScreenBytes-1)
-	_, err := RawToGrayscale(raw, 0, 255)
+	_, err := RawToPaletted(raw)
 	if err == nil {
 		t.Error("Didn't throw error on too-small raw!")
 	}
 	raw = make([]byte, ScreenBytes+1)
-	_, err = RawToGrayscale(raw, 0, 255)
+	_, err = RawToPaletted(raw)
 	if err == nil {
 		t.Error("Didn't throw error on too-large raw!")
 	}
@@ -69,12 +69,12 @@ func TestRawToGrayscale_IncorrectSize(t *testing.T) {
 
 func TestGrayscaleToRaw_IncorrectSize(t *testing.T) {
 	raw := make([]byte, ScreenWidth*ScreenHeight-1)
-	_, err := GrayscaleToRaw(raw, 100)
+	_, err := PalettedToRaw(raw)
 	if err == nil {
 		t.Error("Didn't throw error on too-small grayscale!")
 	}
 	raw = make([]byte, ScreenWidth*ScreenHeight+1)
-	_, err = GrayscaleToRaw(raw, 100)
+	_, err = PalettedToRaw(raw)
 	if err == nil {
 		t.Error("Didn't throw error on too-large grayscale!")
 	}
