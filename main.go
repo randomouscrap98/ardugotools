@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	AppVersion = "0.1.0"
+	AppVersion = "0.2.0"
 )
 
 // Quick way to fail on error, since most commands are "doing" something on
@@ -469,9 +469,9 @@ func (c *Img2BinCmd) Run() error {
 	defer img.Close()
 	stat, err := img.Stat()
 	fatalIfErr("img2bin", "getFileInfo", err)
-	paletted, err := arduboy.ImageToPaletted(img, c.Threshold)
+	paletted, err := arduboy.ImageToPalettedTitle(img, c.Threshold)
 	fatalIfErr("img2bin", "convert image to palette", err)
-	bin, err := arduboy.PalettedToRaw(paletted)
+	bin, err := arduboy.PalettedToRawTitle(paletted)
 	fatalIfErr("img2bin", "convert palette to raw", err)
 	err = os.WriteFile(c.Outfile, bin, 0644)
 	fatalIfErr("img2bin", "write file", err)
@@ -499,13 +499,14 @@ func (c *Bin2ImgCmd) Run() error {
 	}
 	raw, err := os.ReadFile(c.Infile)
 	fatalIfErr("bin2img", "read bin file", err)
-	paletted, err := arduboy.RawToPaletted(raw)
+	paletted, err := arduboy.RawToPalettedTitle(raw)
 	fatalIfErr("bin2img", "convert to paletted", err)
 	black, err := csscolorparser.Parse(c.Black)
 	fatalIfErr("bin2img", "parse black color", err)
 	white, err := csscolorparser.Parse(c.White)
 	fatalIfErr("bin2img", "parse white color", err)
-	imageraw, err := arduboy.PalettedToImage(paletted, black, white, c.Format)
+	imageraw, err := arduboy.PalettedToImage(paletted, arduboy.ScreenWidth, arduboy.ScreenHeight,
+		black, white, c.Format)
 	fatalIfErr("bin2img", "convert paletted to "+c.Format, err)
 	err = os.WriteFile(c.Outfile, imageraw, 0644)
 	fatalIfErr("bin2img", "write file", err)
@@ -537,13 +538,14 @@ func (c *Img2ImgCmd) Run() error {
 	defer original.Close()
 	stat, err := original.Stat()
 	fatalIfErr("img2bin", "getFileInfo", err)
-	paletted, err := arduboy.ImageToPaletted(original, c.Threshold)
+	paletted, err := arduboy.ImageToPalettedTitle(original, c.Threshold)
 	fatalIfErr("img2img", "convert to paletted", err)
 	black, err := csscolorparser.Parse(c.Black)
 	fatalIfErr("img2img", "parse black color", err)
 	white, err := csscolorparser.Parse(c.White)
 	fatalIfErr("img2img", "parse white color", err)
-	imageraw, err := arduboy.PalettedToImage(paletted, black, white, c.Format)
+	imageraw, err := arduboy.PalettedToImage(paletted, arduboy.ScreenWidth, arduboy.ScreenHeight,
+		black, white, c.Format)
 	fatalIfErr("img2img", "convert paletted to "+c.Format, err)
 	err = os.WriteFile(c.Outfile, imageraw, 0644)
 	fatalIfErr("img2img", "write file", err)
@@ -567,6 +569,8 @@ var cli struct {
 	} `cmd:"" help:"Get cursory information on various things (devices, flashcart, etc)"`
 	Analyze struct {
 		Device QueryCmd `cmd:"" help:"Get deeper information about a particular Arduboy"`
+		// Could analyze flashcart to figure out what device it might be for, and whether
+		// it's technically invalid
 	} `cmd:"" help:"Get deeper information on various things (device, flashcart, etc)"`
 	Read struct {
 		Sketch    SketchReadCmd    `cmd:"" help:"Read just the sketch portion of flash, saved as a .hex file"`
@@ -583,8 +587,8 @@ var cli struct {
 		Eeprom EepromDeleteCmd `cmd:"" help:"Reset entire eeprom"`
 	} `cmd:"" help:"Delete data on arduboy (eeprom)"`
 	Convert struct {
-		Hex2Bin Hex2BinCmd `cmd:"" help:"Convert hex to bin" name:"hex2bin"`
-		Bin2Hex Bin2HexCmd `cmd:"" help:"Convert bin to hex" name:"bin2hex"`
+		Hex2Bin Hex2BinCmd `cmd:"" help:"Convert sketch hex to bin" name:"hex2bin"`
+		Bin2Hex Bin2HexCmd `cmd:"" help:"Convert sketch bin to hex" name:"bin2hex"`
 		Bin2Img Bin2ImgCmd `cmd:"" help:"Convert 1024 byte bin to png img" name:"bin2img"`
 		Img2Bin Img2BinCmd `cmd:"" help:"Convert any image to arduboy 1024 byte bin format" name:"img2bin"`
 		Image   Img2ImgCmd `cmd:"" help:"Convert any image to a 2 color 128x64 black and white image" name:"image"`

@@ -529,12 +529,12 @@ func ScanFlashcartMeta(sercon io.ReadWriter, getImages bool) ([]HeaderCategory, 
 				return err
 			}
 			go func() {
-				outbytes, err := RawToPaletted(imgbytes)
+				outbytes, err := RawToPalettedTitle(imgbytes)
 				if err != nil {
 					errchan <- err
 					return
 				}
-				pngraw, err := PalettedToImageBW(outbytes, "png")
+				pngraw, err := PalettedToImageTitleBW(outbytes, "png")
 				if err != nil {
 					errchan <- err
 					return
@@ -590,11 +590,11 @@ func ScanFlashcartFileMeta(data io.ReadSeeker, getImages bool) ([]HeaderCategory
 			if err != nil {
 				return err
 			}
-			outbytes, err := RawToPaletted(imageRaw)
+			outbytes, err := RawToPalettedTitle(imageRaw)
 			if err != nil {
 				return err
 			}
-			pngraw, err := PalettedToImageBW(outbytes, "png")
+			pngraw, err := PalettedToImageTitleBW(outbytes, "png")
 			if err != nil {
 				return err
 			}
