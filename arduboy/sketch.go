@@ -185,19 +185,6 @@ func WriteHex(sercon io.ReadWriter, rawSketch io.Reader, fullClear bool) ([]byte
 	// Scan through the hex and the existing sketch, see if it goes beyond
 	// the bounds. If it does, it's an error.
 	hexmem := gohex.NewMemory()
-	//if fullClear {
-	//	// Prefill memory with all 0xFF
-	//	fullempty := make([]byte, FlashPageSize)
-	//	for i := range fullempty {
-	//		fullempty[i] = 0xFF
-	//	}
-	//	for p := 0; p < len(sketch); p += FlashPageSize {
-	//		err = hexmem.AddBinary(uint32(p), fullempty)
-	//		if err != nil {
-	//			return nil, nil, err
-	//		}
-	//	}
-	//}
 	err = hexmem.ParseIntelHex(rawSketch)
 	if err != nil {
 		return nil, nil, err
@@ -249,13 +236,6 @@ func WriteHex(sercon io.ReadWriter, rawSketch io.Reader, fullClear bool) ([]byte
 	return newsketch, writtenPages, nil
 }
 
-// // For the VAST MAJORITY (basically all) sketches, we actually only want the data
-// // specified in the sketch and NOTHING else. As such, we actually have a vastly simplified
-// // approach to writing, which is simply to create a full sketch of 0xFF, apply the hex on
-// // top, then write the entire thing to the arduboy.
-// func WriteSketch(sercon io.ReadWriter, rawSketch io.Reader) ([]byte, error) {
-// }
-
 // Convert given byte blob to hex. Does NOT modify the data in any way
 func BinToHex(data []byte, writer io.Writer) error {
 	hexmem := gohex.NewMemory()
@@ -276,7 +256,6 @@ func HexToBin(reader io.Reader) ([]byte, error) {
 	for _, segment := range hexmem.GetDataSegments() {
 		dataLength = max(dataLength, segment.Address+uint32(len(segment.Data)))
 	}
-	log.Printf("Computed hex data length is %d\n", dataLength)
 	result := make([]byte, dataLength)
 	for i := range result {
 		result[i] = 0xFF

@@ -415,6 +415,7 @@ func (c *Hex2BinCmd) Run() error {
 	defer sketch.Close()
 	bin, err := arduboy.HexToBin(sketch)
 	fatalIfErr("hex2bin", "convert hex", err)
+	log.Printf("Hex real data length is %d\n", len(bin))
 	dest, err := os.Create(c.Outfile)
 	fatalIfErr("hex2bin", "write file", err)
 	defer dest.Close()
