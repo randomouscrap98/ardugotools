@@ -11,6 +11,10 @@ import (
 	"github.com/randomouscrap98/ardugotools/arduboy"
 )
 
+const (
+	AppVersion = "0.1.0"
+)
+
 // Quick way to fail on error, since most commands are "doing" something on
 // behalf of something else.
 func fatalIfErr(subject string, doing string, err error) {
@@ -595,7 +599,7 @@ func main() {
 		kong.ShortUsageOnError(),
 		kong.Description("A set of tools for working with Arduboy"),
 		kong.Vars{
-			"version": "0.1.0",
+			"version": AppVersion,
 		},
 	)
 	if cli.Norgb {
