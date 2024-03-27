@@ -470,7 +470,7 @@ func (c *Img2BinCmd) Run() error {
 	defer img.Close()
 	stat, err := img.Stat()
 	fatalIfErr("img2bin", "getFileInfo", err)
-	paletted, err := arduboy.ImageToPalettedTitle(img, c.Threshold)
+	paletted, err := arduboy.RawImageToPalettedTitle(img, c.Threshold)
 	fatalIfErr("img2bin", "convert image to palette", err)
 	bin, err := arduboy.PalettedToRawTitle(paletted)
 	fatalIfErr("img2bin", "convert palette to raw", err)
@@ -506,16 +506,19 @@ func (c *Bin2ImgCmd) Run() error {
 	fatalIfErr("bin2img", "parse black color", err)
 	white, err := csscolorparser.Parse(c.White)
 	fatalIfErr("bin2img", "parse white color", err)
-	imageraw, err := arduboy.PalettedToImage(paletted, arduboy.ScreenWidth, arduboy.ScreenHeight,
-		black, white, c.Format)
+	imgfile, err := os.Create(c.Outfile)
+	fatalIfErr("bin2img", "create file", err)
+	defer imgfile.Close()
+	err = arduboy.PalettedToImage(paletted, arduboy.ScreenWidth, arduboy.ScreenHeight,
+		black, white, c.Format, imgfile)
 	fatalIfErr("bin2img", "convert paletted to "+c.Format, err)
-	err = os.WriteFile(c.Outfile, imageraw, 0644)
-	fatalIfErr("bin2img", "write file", err)
+	stat, err := imgfile.Stat()
+	fatalIfErr("bin2img", "get image file info", err)
 	result := make(map[string]interface{})
 	result["Infile"] = c.Infile
 	result["Outfile"] = c.Outfile
 	result["BinLength"] = len(raw)
-	result["ImageLength"] = len(imageraw)
+	result["ImageLength"] = stat.Size()
 	result["MD5"] = arduboy.Md5String(raw)
 	PrintJson(result)
 	return nil
@@ -539,22 +542,25 @@ func (c *Img2ImgCmd) Run() error {
 	defer original.Close()
 	stat, err := original.Stat()
 	fatalIfErr("img2bin", "getFileInfo", err)
-	paletted, err := arduboy.ImageToPalettedTitle(original, c.Threshold)
+	paletted, err := arduboy.RawImageToPalettedTitle(original, c.Threshold)
 	fatalIfErr("img2img", "convert to paletted", err)
 	black, err := csscolorparser.Parse(c.Black)
 	fatalIfErr("img2img", "parse black color", err)
 	white, err := csscolorparser.Parse(c.White)
 	fatalIfErr("img2img", "parse white color", err)
-	imageraw, err := arduboy.PalettedToImage(paletted, arduboy.ScreenWidth, arduboy.ScreenHeight,
-		black, white, c.Format)
-	fatalIfErr("img2img", "convert paletted to "+c.Format, err)
-	err = os.WriteFile(c.Outfile, imageraw, 0644)
+	imgfile, err := os.Create(c.Outfile)
 	fatalIfErr("img2img", "write file", err)
+	defer imgfile.Close()
+	err = arduboy.PalettedToImage(paletted, arduboy.ScreenWidth, arduboy.ScreenHeight,
+		black, white, c.Format, imgfile)
+	fatalIfErr("img2img", "convert paletted to "+c.Format, err)
+	newstat, err := imgfile.Stat()
+	fatalIfErr("img2img", "get new file stat", err)
 	result := make(map[string]interface{})
 	result["Infile"] = c.Infile
 	result["Outfile"] = c.Outfile
 	result["InputImageLength"] = stat.Size()
-	result["OutputImageLength"] = len(imageraw)
+	result["OutputImageLength"] = newstat.Size()
 	PrintJson(result)
 	return nil
 }

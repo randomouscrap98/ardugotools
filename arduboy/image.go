@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 
-	//"os"
-
 	"image"
 	"image/color"
 	"image/gif"
@@ -54,10 +52,6 @@ func RawToPaletted(raw []byte, width int, height int) ([]byte, error) {
 	return result, nil //err
 }
 
-func RawToPalettedTitle(raw []byte) ([]byte, error) {
-	return RawToPaletted(raw, ScreenWidth, ScreenHeight)
-}
-
 // Convert a paletted image to a raw arduboy format
 func PalettedToRaw(raw []byte, width int, height int) ([]byte, error) {
 	expectedSize := width * height
@@ -83,54 +77,84 @@ func PalettedToRawTitle(raw []byte) ([]byte, error) {
 	return PalettedToRaw(raw, ScreenWidth, ScreenHeight)
 }
 
+func RawToPalettedTitle(raw []byte) ([]byte, error) {
+	return RawToPaletted(raw, ScreenWidth, ScreenHeight)
+}
+
 // Convert a paletted raw to an image of the given format. Possible values are
-// gif, png, bmp
-func PalettedToImage(raw []byte, width int, height int, black color.Color, white color.Color, format string) ([]byte, error) {
+// gif, png, bmp, jpg. Transparency is possible if the right colors are chosen,
+// but only two colors are allowed
+func PalettedToImage(raw []byte, width int, height int, black color.Color, white color.Color, format string, writer io.Writer) error {
 	palette := color.Palette{black, white}
 	img := image.NewPaletted(image.Rect(0, 0, width, height), palette)
 	img.Pix = raw
-	var buf bytes.Buffer
+	//var buf bytes.Buffer
 	var err error
 	if format == "gif" {
-		err = gif.Encode(&buf, img, &gif.Options{
+		err = gif.Encode(writer, img, &gif.Options{
 			NumColors: 2, Quantizer: nil, Drawer: nil,
 		})
 	} else if format == "png" {
-		err = png.Encode(&buf, img)
+		err = png.Encode(writer, img)
 	} else if format == "jpg" {
-		err = jpeg.Encode(&buf, img, nil)
+		err = jpeg.Encode(writer, img, nil)
 	} else if format == "bmp" {
-		err = bmp.Encode(&buf, img)
+		err = bmp.Encode(writer, img)
 	} else {
-		return nil, fmt.Errorf("Unknown format: %s", format)
+		return fmt.Errorf("Unknown format: %s", format)
 	}
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// Convert a paletted image to a real image in the given format. Don't bother with
+// a writer, since titles are so small
+func PalettedToImageTitleBW(raw []byte, format string) ([]byte, error) {
+	var buf bytes.Buffer
+	err := PalettedToImage(raw, ScreenWidth, ScreenHeight, color.Black, color.White, format, &buf)
 	if err != nil {
 		return nil, err
 	}
 	return buf.Bytes(), nil
 }
 
-func PalettedToImageTitleBW(raw []byte, format string) ([]byte, error) {
-	return PalettedToImage(raw, ScreenWidth, ScreenHeight, color.Black, color.White, format)
+// Convert real image to paletted image, no resizing
+func ImageToPaletted(img image.Image, whiteThreshold uint8) ([]byte, int, int) {
+	grayImg := imaging.Grayscale(img)
+	width := grayImg.Rect.Dx()
+	height := grayImg.Rect.Dy()
+	paletteImg := make([]byte, width*height)
+	for i := 0; i < width*height; i++ {
+		if grayImg.Pix[i*4] >= whiteThreshold {
+			paletteImg[i] = 1
+		}
+	}
+	return paletteImg, grayImg.Rect.Dx(), grayImg.Rect.Dy()
+}
+
+// If you haven't already decoded the image, we can do that for you
+func RawImageToPaletted(raw io.Reader, whiteThreshold uint8) ([]byte, int, int, error) {
+	img, _, err := image.Decode(raw)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	res, w, h := ImageToPaletted(img, whiteThreshold)
+	return res, w, h, nil
 }
 
 // Resize and downscale the given image into a paletted image
 // with arduboy dimensions. The whiteThreshold is the start
 // of what is considered "white". Everything else is black
-func ImageToPalettedTitle(raw io.Reader, whiteThreshold uint8) ([]byte, error) {
+func RawImageToPalettedTitle(raw io.Reader, whiteThreshold uint8) ([]byte, error) {
 	img, _, err := image.Decode(raw)
 	if err != nil {
 		return nil, err
 	}
 	resizedImg := resize.Resize(uint(ScreenWidth), uint(ScreenHeight), img, resize.Bilinear)
-	grayImg := imaging.Grayscale(resizedImg)
-	paletteImg := make([]byte, ScreenWidth*ScreenHeight)
-	for i := 0; i < ScreenWidth*ScreenHeight; i++ {
-		if grayImg.Pix[i*4] >= whiteThreshold {
-			paletteImg[i] = 1
-		}
-	}
-	return paletteImg, nil
+	res, _, _ := ImageToPaletted(resizedImg, whiteThreshold)
+	return res, nil
 }
 
 // Configuration for tile / code generation
@@ -208,7 +232,7 @@ func (c *TileConfigComputed) ValidateForFx() error {
 }
 
 // Split the given image into linear tiles based on the given tile config. returns the
-// array of tiles, each in NRGBA format
+// array of tile images, each in NRGBA format
 func SplitImageToTiles(rawimage io.Reader, config *TileConfig) ([]*image.NRGBA, *TileConfigComputed, error) {
 	if config == nil {
 		config = &TileConfig{AddDimensions: true}
@@ -221,6 +245,7 @@ func SplitImageToTiles(rawimage io.Reader, config *TileConfig) ([]*image.NRGBA, 
 	imgwidth := bounds.Dx()
 	imgheight := bounds.Dy()
 	computed := config.Expand(imgwidth, imgheight)
+	//fmt.Printf("Computed: %v", computed)
 	err = computed.ValidateGeneral()
 	if err != nil {
 		return nil, nil, err
@@ -232,9 +257,9 @@ func SplitImageToTiles(rawimage io.Reader, config *TileConfig) ([]*image.NRGBA, 
 		for xf := 0; xf < computed.HFrames; xf++ {
 			sprite := imaging.Crop(img, image.Rect(
 				computed.StartX+computed.StrideX*xf,
-				computed.StartY+computed.StrideX*xf,
+				computed.StartY+computed.StrideY*yf,
 				computed.StartX+computed.StrideX*xf+computed.SpriteWidth,
-				computed.StartY+computed.StrideX*xf+computed.SpriteHeight,
+				computed.StartY+computed.StrideY*yf+computed.SpriteHeight,
 			))
 			results = append(results, sprite)
 			if len(sprite.Pix) != expectedTileLength {

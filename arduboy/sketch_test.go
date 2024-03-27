@@ -11,14 +11,14 @@ func TestBinToHexTransparency(t *testing.T) {
 		var w bytes.Buffer
 		err := BinToHex(b, &w)
 		if err != nil {
-			t.Errorf("Error converting bin to hex: %s", err)
+			t.Fatalf("Error converting bin to hex: %s", err)
 		}
 		b2, err := HexToBin(&w)
 		if err != nil {
-			t.Errorf("Error converting hex back to bin: %s", err)
+			t.Fatalf("Error converting hex back to bin: %s", err)
 		}
 		if !bytes.Equal(b, b2) {
-			t.Errorf("BinToHex/HexToBin not transparent!")
+			t.Fatalf("BinToHex/HexToBin not transparent!")
 		}
 	}
 }
