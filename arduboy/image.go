@@ -85,14 +85,14 @@ func RawToPalettedTitle(raw []byte) ([]byte, error) {
 // gif, png, bmp, jpg. Transparency is possible if the right colors are chosen,
 // but only two colors are allowed
 func PalettedToImage(raw []byte, width int, height int, black color.Color, white color.Color, format string, writer io.Writer) error {
-	palette := color.Palette{black, white}
+	palette := color.Palette{black, white, color.Transparent, color.RGBA{R: 255}}
 	img := image.NewPaletted(image.Rect(0, 0, width, height), palette)
 	img.Pix = raw
 	//var buf bytes.Buffer
 	var err error
 	if format == "gif" {
 		err = gif.Encode(writer, img, &gif.Options{
-			NumColors: 2, Quantizer: nil, Drawer: nil,
+			NumColors: 4, Quantizer: nil, Drawer: nil,
 		})
 	} else if format == "png" {
 		err = png.Encode(writer, img)
@@ -121,13 +121,15 @@ func PalettedToImageTitleBW(raw []byte, format string) ([]byte, error) {
 }
 
 // Convert real image to paletted image, no resizing
-func ImageToPaletted(img image.Image, whiteThreshold uint8) ([]byte, int, int) {
+func ImageToPaletted(img image.Image, whiteThreshold uint8, alphaThreshold uint8) ([]byte, int, int) {
 	grayImg := imaging.Grayscale(img)
 	width := grayImg.Rect.Dx()
 	height := grayImg.Rect.Dy()
 	paletteImg := make([]byte, width*height)
 	for i := 0; i < width*height; i++ {
-		if grayImg.Pix[i*4] >= whiteThreshold {
+		if grayImg.Pix[i*4+3] < alphaThreshold {
+			paletteImg[i] = 2
+		} else if grayImg.Pix[i*4] >= whiteThreshold {
 			paletteImg[i] = 1
 		}
 	}
@@ -135,12 +137,12 @@ func ImageToPaletted(img image.Image, whiteThreshold uint8) ([]byte, int, int) {
 }
 
 // If you haven't already decoded the image, we can do that for you
-func RawImageToPaletted(raw io.Reader, whiteThreshold uint8) ([]byte, int, int, error) {
+func RawImageToPaletted(raw io.Reader, whiteThreshold uint8, alphaThreshold uint8) ([]byte, int, int, error) {
 	img, _, err := image.Decode(raw)
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	res, w, h := ImageToPaletted(img, whiteThreshold)
+	res, w, h := ImageToPaletted(img, whiteThreshold, alphaThreshold)
 	return res, w, h, nil
 }
 
@@ -153,7 +155,7 @@ func RawImageToPalettedTitle(raw io.Reader, whiteThreshold uint8) ([]byte, error
 		return nil, err
 	}
 	resizedImg := resize.Resize(uint(ScreenWidth), uint(ScreenHeight), img, resize.Bilinear)
-	res, _, _ := ImageToPaletted(resizedImg, whiteThreshold)
+	res, _, _ := ImageToPaletted(resizedImg, whiteThreshold, 0)
 	return res, nil
 }
 

@@ -5,6 +5,8 @@ import (
 	"io"
 	"log"
 	"os"
+	"path"
+	"time"
 
 	"github.com/alecthomas/kong"
 	"github.com/mazznoer/csscolorparser"
@@ -565,6 +567,70 @@ func (c *Img2ImgCmd) Run() error {
 	return nil
 }
 
+// type SplitExampleCmd struct {
+// 	Config arduboy.TileConfig `embed:""` //prefix:"config"`
+// }
+//
+// func (c *SplitExampleCmd) Run() error {
+// 	PrintJson(c.Config)
+// 	return nil
+// }
+
+type SplitCodeCmd struct {
+	Config         arduboy.TileConfig `embed:""` //prefix:"config"`
+	Gentiles       string             `type:"path" short:"t"`
+	Black          string             `default:"#000000" help:"Color to use for black for gentiles"`
+	White          string             `default:"#FFFFFF" help:"Color to use for white for gentiles"`
+	Threshold      uint8              `default:"100" help:"White threshold (grayscale value)"`
+	Alphathreshold uint8              `default:"50" help:"Alpha threshold (values lower are 'transparent')"`
+	Infile         string             `type:"existingfile" default:"spritesheet.png" short:"i"`
+	NoComments     bool               `help:"Don't generate the comments at the top of code"`
+}
+
+func (c *SplitCodeCmd) Run() error {
+	log.Printf("Config: %v\n", c.Config)
+	sprites, err := os.Open(c.Infile)
+	fatalIfErr("splitcode", "read image file", err)
+	defer sprites.Close()
+	stat, err := sprites.Stat()
+	fatalIfErr("splitcode", "get file info", err)
+	tiles, computed, err := arduboy.SplitImageToTiles(sprites, &c.Config)
+	fatalIfErr("splitcode", "split image to tiles", err)
+	log.Printf("Split into %d %dx%d tiles\n", len(tiles), computed.SpriteWidth, computed.SpriteHeight)
+	// Maybe too much memory? IDK
+	ptiles := make([][]byte, len(tiles))
+	for i, tile := range tiles {
+		ptiles[i], _, _ = arduboy.ImageToPaletted(tile, c.Threshold, c.Alphathreshold)
+	}
+	if c.Gentiles != "" {
+		// Go try to make the folder
+		err = os.Mkdir(c.Gentiles, 0770)
+		fatalIfErr("splitcode", "create tiles folder", err)
+		black, err := csscolorparser.Parse(c.Black)
+		fatalIfErr("splitcode", "parse black color", err)
+		white, err := csscolorparser.Parse(c.White)
+		fatalIfErr("splictcode", "parse white color", err)
+		// Now for each image, dump it as a png
+		for i, ptile := range ptiles {
+			tpath := path.Join(c.Gentiles, fmt.Sprintf("%d.png", i))
+			tfile, err := os.Create(tpath)
+			fatalIfErr("splitcode", fmt.Sprintf("write tile %d", i), err)
+			log.Printf("Writing tile file %s\n", tpath)
+			arduboy.PalettedToImage(ptile, computed.SpriteWidth,
+				computed.SpriteHeight, black, white, "png", tfile)
+		}
+	}
+
+	if !c.NoComments {
+		fmt.Printf("// Generated on %s with ardugotools %s\n", time.Now().Format(time.RFC1123), AppVersion)
+		fmt.Printf("// Original file: %s (%d bytes)\n", path.Base(c.Infile), stat.Size())
+		fmt.Printf("// Tilesize: %dx%d Spacing: %d\n",
+			computed.SpriteWidth, computed.SpriteHeight, c.Config.Spacing)
+	}
+
+	return nil
+}
+
 // **********************************
 // *    ALL TOGETHER COMMANDS       *
 // **********************************
@@ -598,6 +664,8 @@ var cli struct {
 		Bin2Img   Bin2ImgCmd `cmd:"" help:"Convert 1024 byte bin to png img" name:"bin2img"`
 		Img2Bin   Img2BinCmd `cmd:"" help:"Convert any image to arduboy 1024 byte bin format" name:"img2bin"`
 		Img2Title Img2ImgCmd `cmd:"" help:"Convert any image to a 2 color 128x64 black and white image" name:"img2title"`
+		//SplitConfig SplitExampleCmd `cmd:"" help:"Generate usable example json config for splitcode" name:"splitconf"`
+		SplitCode SplitCodeCmd `cmd:"" help:"Split image, generate code" name:"splitcode"`
 	} `cmd:"" help:"Commands which work directly on images, such as titles or spritesheets"`
 	Version kong.VersionFlag `help:"Show version information"`
 	Norgb   bool             `help:"Disable all rgb while accessing device"`

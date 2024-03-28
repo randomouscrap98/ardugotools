@@ -192,11 +192,11 @@ func TestSplitImageToTiles_TestFile_NoSpacing(t *testing.T) {
 			t.Fatalf("Couldn't open test spritesheet: %s", err)
 		}
 		defer tileraw.Close()
-		realtilepaletted, _, _, err := RawImageToPaletted(tileraw, 100)
+		realtilepaletted, _, _, err := RawImageToPaletted(tileraw, 100, 0)
 		if err != nil {
 			t.Fatalf("Couldn't get paletted from reference tile: %s", err)
 		}
-		testtilepaletted, _, _ := ImageToPaletted(tile, 100)
+		testtilepaletted, _, _ := ImageToPaletted(tile, 100, 0)
 		if !bytes.Equal(realtilepaletted, testtilepaletted) {
 			t.Fatalf("Tile %d not transparent!", i)
 		}
