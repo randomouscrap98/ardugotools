@@ -7,7 +7,7 @@ import (
 	"image"
 	"image/png"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 
 	"testing"
@@ -153,11 +153,11 @@ func TestSplitImageToTiles_SingleImage(t *testing.T) {
 }
 
 func fileTestPath(filename string) string {
-	return path.Join("..", "testfiles", filename)
+	return filepath.Join("..", "testfiles", filename)
 }
 
 func tileTestPath(filename string) string {
-	return path.Join(fileTestPath("tiles"), filename)
+	return filepath.Join(fileTestPath("tiles"), filename)
 }
 
 func TestSplitImageToTiles_TestFile_NoSpacing(t *testing.T) {
@@ -271,6 +271,33 @@ func TestImageToCode_ArduboyToolset(t *testing.T) {
 
 	// Now compare code to the code to the expected
 	rawfile, err := os.ReadFile(fileTestPath("spritesheet.h"))
+	if err != nil {
+		t.Fatalf("Couldn't load expected file: %s", err)
+	}
+
+	trimcode := strings.Trim(code, "\r\n\t ")
+	trimexpect := strings.Trim(string(rawfile), "\r\n\t ")
+
+	if err := FindStringDiff(trimcode, trimexpect); err != nil {
+		t.Fatalf("Generated code differs:\n%s", err)
+	}
+}
+
+func TestImageToCode_ArduboyToolset2(t *testing.T) {
+	config := TileConfig{
+		Width:         16,
+		Height:        16,
+		UseMask:       true,
+		SeparateMask:  false,
+		WindowsFormat: true,
+		NoDimensions:  true,
+		Name:          "MyImage",
+	}
+
+	code := spritesheetCodegen(t, &config)
+
+	// Now compare code to the code to the expected
+	rawfile, err := os.ReadFile(fileTestPath("spritesheet2.h"))
 	if err != nil {
 		t.Fatalf("Couldn't load expected file: %s", err)
 	}

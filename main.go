@@ -5,7 +5,7 @@ import (
 	"io"
 	"log"
 	"os"
-	"path"
+	"path/filepath"
 	"time"
 
 	"github.com/alecthomas/kong"
@@ -603,7 +603,7 @@ func (c *SplitCodeCmd) Run() error {
 		fatalIfErr("splitcode", "parse white color", err)
 		// Now for each image, dump it as a png
 		for i, ptile := range ptiles {
-			tpath := path.Join(c.Gentiles, fmt.Sprintf("%d.png", i))
+			tpath := filepath.Join(c.Gentiles, fmt.Sprintf("%d.png", i))
 			tfile, err := os.Create(tpath)
 			fatalIfErr("splitcode", fmt.Sprintf("write tile %d", i), err)
 			log.Printf("Writing tile file %s\n", tpath)
@@ -614,7 +614,7 @@ func (c *SplitCodeCmd) Run() error {
 
 	if !c.NoComments {
 		fmt.Printf("// Generated on %s with ardugotools %s\n", time.Now().Format(time.RFC1123), AppVersion)
-		fmt.Printf("// Original file: %s (%d bytes)\n", path.Base(c.Infile), stat.Size())
+		fmt.Printf("// Original file: %s (%d bytes)\n", filepath.Base(c.Infile), stat.Size())
 		fmt.Printf("// Tilesize: %dx%d Spacing: %d\n",
 			computed.SpriteWidth, computed.SpriteHeight, c.Config.Spacing)
 		fmt.Printf("\n")
