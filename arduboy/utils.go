@@ -5,7 +5,9 @@ import (
 	"crypto/md5"
 	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 	"io"
+	"strings"
 )
 
 const (
@@ -206,4 +208,34 @@ func FillStringArray(strings []string, data []byte) (int, int) {
 	}
 	// We were able to write everything
 	return len(strings), 0
+}
+
+func EchoSpaceControls(s string) string {
+	replacer := strings.NewReplacer("\n", "\\n", "\r", "\\r", "\t", "\\t")
+	return replacer.Replace(s)
+}
+
+func FindStringDiff(a string, b string) error {
+	maxlen := max(len(a), len(b))
+	for i := 0; i < maxlen; i++ {
+		ac := 0
+		bc := 0
+		if i < len(a) {
+			ac = int(a[i])
+		}
+		if i < len(b) {
+			bc = int(b[i])
+		}
+		if ac != bc {
+			back := max(0, i-8)
+			return fmt.Errorf("strings differ at %d: '%s' vs '%s'", i,
+				EchoSpaceControls(a[back:min(len(a), i+8)]),
+				EchoSpaceControls(b[back:min(len(b), i+8)]))
+		}
+	}
+	// Just in case
+	if len(a) != len(b) {
+		return fmt.Errorf("string lengths differ: %d vs %d", len(a), len(b))
+	}
+	return nil
 }

@@ -8,6 +8,7 @@ import (
 	"image/png"
 	"os"
 	"path"
+	"strings"
 
 	"testing"
 )
@@ -151,8 +152,12 @@ func TestSplitImageToTiles_SingleImage(t *testing.T) {
 	}
 }
 
+func fileTestPath(filename string) string {
+	return path.Join("..", "testfiles", filename)
+}
+
 func tileTestPath(filename string) string {
-	return path.Join("..", "testfiles", "tiles", filename)
+	return path.Join(fileTestPath("tiles"), filename)
 }
 
 func TestSplitImageToTiles_TestFile_NoSpacing(t *testing.T) {
@@ -200,5 +205,80 @@ func TestSplitImageToTiles_TestFile_NoSpacing(t *testing.T) {
 		if !bytes.Equal(realtilepaletted, testtilepaletted) {
 			t.Fatalf("Tile %d not transparent!", i)
 		}
+	}
+}
+
+func loadSpritesheet(t *testing.T, config *TileConfig) ([][]byte, *TileConfigComputed) {
+	// Load spritesheet file
+	sprites, err := os.Open(fileTestPath("spritesheet.png"))
+	if err != nil {
+		t.Fatalf("Couldn't load image: %s", err)
+	}
+	defer sprites.Close()
+	tiles, computed, err := SplitImageToTiles(sprites, config)
+	if err != nil {
+		t.Fatalf("Couldn't split image to tiles: %s", err)
+	}
+
+	// Make sure the computed makes sense
+	if computed.SpriteWidth != 16 {
+		t.Fatalf("SpriteWidth not 16")
+	}
+	if computed.SpriteHeight != 16 {
+		t.Fatalf("SpriteHeight not 16")
+	}
+	if computed.HFrames != 4 {
+		t.Fatal("HFrames not 4")
+	}
+	if computed.HFrames != 4 {
+		t.Fatal("HFrames not 4")
+	}
+	if computed.VFrames != 4 {
+		t.Fatal("VFrames not 4")
+	}
+	if len(tiles) != 16 {
+		t.Fatal("Tiles not 16")
+	}
+
+	ptiles := make([][]byte, len(tiles))
+	for i, tile := range tiles {
+		ptiles[i], _, _ = ImageToPaletted(tile, 100, 10)
+	}
+
+	return ptiles, computed
+}
+
+func spritesheetCodegen(t *testing.T, config *TileConfig) string {
+	ptiles, computed := loadSpritesheet(t, config)
+	code, err := PalettedToCode(ptiles, config, computed)
+	if err != nil {
+		t.Fatalf("Couldn't convert paletted to code: %s", err)
+	}
+	return code
+}
+
+func TestImageToCode_ArduboyToolset(t *testing.T) {
+	config := TileConfig{
+		Width:         16,
+		Height:        16,
+		UseMask:       true,
+		SeparateMask:  true,
+		WindowsFormat: true,
+		Name:          "MyImage",
+	}
+
+	code := spritesheetCodegen(t, &config)
+
+	// Now compare code to the code to the expected
+	rawfile, err := os.ReadFile(fileTestPath("spritesheet.h"))
+	if err != nil {
+		t.Fatalf("Couldn't load expected file: %s", err)
+	}
+
+	trimcode := strings.Trim(code, "\r\n\t ")
+	trimexpect := strings.Trim(string(rawfile), "\r\n\t ")
+
+	if err := FindStringDiff(trimcode, trimexpect); err != nil {
+		t.Fatalf("Generated code differs:\n%s", err)
 	}
 }

@@ -575,7 +575,7 @@ type SplitCodeCmd struct {
 	Threshold      uint8              `default:"100" help:"White threshold (grayscale value)"`
 	Alphathreshold uint8              `default:"50" help:"Alpha threshold (values lower are 'transparent')"`
 	Infile         string             `type:"existingfile" default:"spritesheet.png" short:"i"`
-	Nocomments     bool               `help:"Don't generate the comments at the top of code"`
+	NoComments     bool               `help:"Don't generate the comments at the top of code"`
 }
 
 func (c *SplitCodeCmd) Run() error {
@@ -600,7 +600,7 @@ func (c *SplitCodeCmd) Run() error {
 		black, err := csscolorparser.Parse(c.Black)
 		fatalIfErr("splitcode", "parse black color", err)
 		white, err := csscolorparser.Parse(c.White)
-		fatalIfErr("splictcode", "parse white color", err)
+		fatalIfErr("splitcode", "parse white color", err)
 		// Now for each image, dump it as a png
 		for i, ptile := range ptiles {
 			tpath := path.Join(c.Gentiles, fmt.Sprintf("%d.png", i))
@@ -612,7 +612,7 @@ func (c *SplitCodeCmd) Run() error {
 		}
 	}
 
-	if !c.Nocomments {
+	if !c.NoComments {
 		fmt.Printf("// Generated on %s with ardugotools %s\n", time.Now().Format(time.RFC1123), AppVersion)
 		fmt.Printf("// Original file: %s (%d bytes)\n", path.Base(c.Infile), stat.Size())
 		fmt.Printf("// Tilesize: %dx%d Spacing: %d\n",
@@ -622,7 +622,8 @@ func (c *SplitCodeCmd) Run() error {
 
 	// Now generate the actual code
 	code, err := arduboy.PalettedToCode(ptiles, &c.Config, computed)
-	fmt.Printf(code)
+	fatalIfErr("splitcode", "convert raw to code", err)
+	fmt.Print(code)
 
 	return nil
 }

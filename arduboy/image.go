@@ -32,7 +32,7 @@ func RawToPaletted(raw []byte, width int, height int) ([]byte, error) {
 	// Drop bottom 3 bits; height is / 8 (and we want to drop the unused bits)
 	expectedRawSize := width * (height >> 3)
 	if len(raw) != expectedRawSize {
-		return nil, fmt.Errorf("Raw image not right size! Expected: %d, got: %d", expectedRawSize, len(raw))
+		return nil, fmt.Errorf("raw image not right size! Expected: %d, got: %d", expectedRawSize, len(raw))
 	}
 	for i, p := range raw {
 		// Each byte in the original image is 8 vertical pixels
@@ -58,7 +58,7 @@ func RawToPaletted(raw []byte, width int, height int) ([]byte, error) {
 func PalettedToRaw(paletted []byte, width int, height int) ([]byte, []byte, error) {
 	expectedSize := width * height
 	if len(paletted) != expectedSize {
-		return nil, nil, fmt.Errorf("Paletted image wrong size! Expected: %d, got %d", expectedSize, len(paletted))
+		return nil, nil, fmt.Errorf("paletted image wrong size! Expected: %d, got %d", expectedSize, len(paletted))
 	}
 	rheight := height >> 3
 	// If not a multiple of 8, height needs to be larger
@@ -114,7 +114,7 @@ func PalettedToImage(raw []byte, width int, height int, black color.Color, white
 	} else if format == "bmp" {
 		err = bmp.Encode(writer, img)
 	} else {
-		return fmt.Errorf("Unknown format: %s", format)
+		return fmt.Errorf("unknown format: %s", format)
 	}
 	if err != nil {
 		return err
@@ -174,13 +174,15 @@ func RawImageToPalettedTitle(raw io.Reader, whiteThreshold uint8) ([]byte, error
 
 // Configuration for tile / code generation
 type TileConfig struct {
-	Width              int    // Width of tile (0 means use all available width)
-	Height             int    // Height of tile (0 means use all available height)
-	Spacing            int    // Spacing between tiles (including on edges)
-	UseMask            bool   // Whether to use transparency as a data mask
-	SeparateHeaderMask bool   // Separate the mask from the data
-	NoDimensions       bool   // Don't output dimension variables in data
-	Name               string // Name of the sprite variables to generate
+	Width         int    // Width of tile (0 means use all available width)
+	Height        int    // Height of tile (0 means use all available height)
+	Spacing       int    // Spacing between tiles (including on edges)
+	UseMask       bool   // Whether to use transparency as a data mask
+	SeparateMask  bool   // Separate the mask from the data
+	NoDimensions  bool   // Don't output dimension variables in data
+	NoPreamble    bool   // Don't generate the preamble (includes, etc)
+	WindowsFormat bool   // Windows newlines (\r\n)
+	Name          string // Name of the sprite variables to generate
 }
 
 // Extra computed fields when we know more about the image we're applying
@@ -229,7 +231,7 @@ func (t *TileConfig) Expand(width int, height int) *TileConfigComputed {
 
 func (c *TileConfigComputed) ValidateGeneral() error {
 	if c.SpriteWidth <= 0 || c.SpriteHeight <= 0 {
-		return fmt.Errorf("Can't generate images with a 0-length side!")
+		return fmt.Errorf("can't generate images with a 0-length side")
 	}
 	return nil
 }
@@ -237,7 +239,7 @@ func (c *TileConfigComputed) ValidateGeneral() error {
 // Ensure computed tile config is valid. Check returned error for nil
 func (c *TileConfigComputed) ValidateForCode() error {
 	if c.SpriteWidth > 255 || c.SpriteHeight > 255 {
-		return fmt.Errorf("Image frames too large for code generation! Must be < 256 in both dimensions (per frame)!")
+		return fmt.Errorf("image frames too large for code generation! Must be < 256 in both dimensions (per frame)")
 	}
 	return c.ValidateGeneral()
 }
@@ -303,6 +305,12 @@ func PalettedToCode(ptiles [][]byte, config *TileConfig, computed *TileConfigCom
 	var headerfile strings.Builder
 	var headermask strings.Builder // We track the separate mask even if we don't end up using it.
 
+	if !config.NoPreamble {
+		headerfile.WriteString("#pragma once\n\n")
+		headerfile.WriteString("#include <stdint.h>\n")
+		headerfile.WriteString("#include <avr/pgmspace.h>\n\n")
+	}
+
 	headerfile.WriteString(fmt.Sprintf("constexpr uint8_t %sWidth = %d;\n", spritename, computed.SpriteWidth))
 	headerfile.WriteString(fmt.Sprintf("constexpr uint8_t %sHeight = %d;\n", spritename, computed.SpriteHeight))
 	headerfile.WriteString("\n")
@@ -330,7 +338,7 @@ func PalettedToCode(ptiles [][]byte, config *TileConfig, computed *TileConfigCom
 			headerfile.WriteString(fmt.Sprintf("0x%02X", raw[j]))
 			headermask.WriteString(fmt.Sprintf("0x%02X", mask[j]))
 			// Interleave mask bytes into header
-			if config.UseMask && !config.SeparateHeaderMask {
+			if config.UseMask && !config.SeparateMask {
 				headerfile.WriteString(fmt.Sprintf(", 0x%02X", mask[j]))
 			}
 			// Wasteful computation to not put the last comma on the very last iteration
@@ -346,10 +354,16 @@ func PalettedToCode(ptiles [][]byte, config *TileConfig, computed *TileConfigCom
 
 	// We've been tracking mask either separately or interleaved. If separate, Go
 	// ahead and add the separate mask to the final data
-	if config.UseMask && config.SeparateHeaderMask {
+	if config.UseMask && config.SeparateMask {
 		headerfile.WriteString("\n")
 		headerfile.WriteString(headermask.String())
 	}
 
-	return headerfile.String(), nil
+	result := headerfile.String()
+
+	if config.WindowsFormat {
+		result = strings.ReplaceAll(result, "\n", "\r\n")
+	}
+
+	return result, nil
 }
