@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"strings"
 
 	"image"
 	"image/color"
@@ -28,10 +29,8 @@ func Uint32ToColor(c uint32) color.Color {
 // using the given black + white points
 func RawToPaletted(raw []byte, width int, height int) ([]byte, error) {
 	result := make([]byte, width*height)
-	expectedRawSize := width * height / 8
-	if height&7 != 0 {
-		return nil, fmt.Errorf("Invalid height! Must be a multiple of 8!")
-	}
+	// Drop bottom 3 bits; height is / 8 (and we want to drop the unused bits)
+	expectedRawSize := width * (height >> 3)
 	if len(raw) != expectedRawSize {
 		return nil, fmt.Errorf("Raw image not right size! Expected: %d, got: %d", expectedRawSize, len(raw))
 	}
@@ -42,10 +41,13 @@ func RawToPaletted(raw []byte, width int, height int) ([]byte, error) {
 		// Iterate over those vertical pixels
 		for bit := 0; bit < 8; bit++ {
 			j := x + (ybase+bit)*width
-			if p&(1<<bit) == 0 {
-				result[j] = 0
-			} else {
-				result[j] = 1
+			// For heights that aren't multiple of 8, the bits technically go outside it
+			if j < len(result) {
+				if p&(1<<bit) == 0 {
+					result[j] = 0
+				} else {
+					result[j] = 1
+				}
 			}
 		}
 	}
@@ -53,28 +55,36 @@ func RawToPaletted(raw []byte, width int, height int) ([]byte, error) {
 }
 
 // Convert a paletted image to a raw arduboy format
-func PalettedToRaw(raw []byte, width int, height int) ([]byte, error) {
+func PalettedToRaw(paletted []byte, width int, height int) ([]byte, []byte, error) {
 	expectedSize := width * height
-	// This may not be required...
-	if height&7 != 0 {
-		return nil, fmt.Errorf("Invalid height! Must be a multiple of 8!")
+	if len(paletted) != expectedSize {
+		return nil, nil, fmt.Errorf("Paletted image wrong size! Expected: %d, got %d", expectedSize, len(paletted))
 	}
-	if len(raw) != expectedSize {
-		return nil, fmt.Errorf("Paletted image wrong size! Expected: %d, got %d", expectedSize, len(raw))
+	rheight := height >> 3
+	// If not a multiple of 8, height needs to be larger
+	if height&7 > 0 {
+		rheight++
 	}
-	result := make([]byte, width*height/8)
+	result := make([]byte, width*rheight)
+	mask := make([]byte, width*rheight)
 	for x := 0; x < width; x++ {
 		for y := 0; y < height; y++ {
-			if raw[x+y*width] > 0 {
-				result[x+(y/8)*width] |= 1 << (y & 7)
+			rpos := x + (y/8)*width
+			rbit := uint8(1 << (y & 7))
+			pix := paletted[x+y*width]
+			if pix == 1 {
+				result[rpos] |= rbit
+			} else if pix == 2 {
+				mask[rpos] |= rbit
 			}
 		}
 	}
-	return result, nil
+	return result, mask, nil
 }
 
 func PalettedToRawTitle(raw []byte) ([]byte, error) {
-	return PalettedToRaw(raw, ScreenWidth, ScreenHeight)
+	result, _, err := PalettedToRaw(raw, ScreenWidth, ScreenHeight)
+	return result, err
 }
 
 func RawToPalettedTitle(raw []byte) ([]byte, error) {
@@ -161,12 +171,13 @@ func RawImageToPalettedTitle(raw io.Reader, whiteThreshold uint8) ([]byte, error
 
 // Configuration for tile / code generation
 type TileConfig struct {
-	Width              int  // Width of tile (0 means use all available width)
-	Height             int  // Height of tile (0 means use all available height)
-	Spacing            int  // Spacing between tiles (including on edges)
-	UseMask            bool // Whether to use transparency as a data mask
-	SeparateHeaderMask bool // Separate the mask from the data
-	AddDimensions      bool // field(default=True)
+	Width              int    // Width of tile (0 means use all available width)
+	Height             int    // Height of tile (0 means use all available height)
+	Spacing            int    // Spacing between tiles (including on edges)
+	UseMask            bool   // Whether to use transparency as a data mask
+	SeparateHeaderMask bool   // Separate the mask from the data
+	NoDimensions       bool   // Don't output dimension variables (but why?)
+	Name               string // Name of the sprite variables to generate
 }
 
 // Extra computed fields when we know more about the image we're applying
@@ -237,7 +248,7 @@ func (c *TileConfigComputed) ValidateForFx() error {
 // array of tile images, each in NRGBA format
 func SplitImageToTiles(rawimage io.Reader, config *TileConfig) ([]*image.NRGBA, *TileConfigComputed, error) {
 	if config == nil {
-		config = &TileConfig{AddDimensions: true}
+		config = &TileConfig{}
 	}
 	img, _, err := image.Decode(rawimage)
 	if err != nil {
@@ -276,106 +287,134 @@ func SplitImageToTiles(rawimage io.Reader, config *TileConfig) ([]*image.NRGBA, 
 
 // Convert the given paletted image to the header data + fxdata
 // (returns a tuple). Taken almost directly from https://github.com/MrBlinky/Arduboy-Python-Utilities/blob/main/image-converter.py
-/*
-func PalettedToCodeAndFx(paletted []byte, name string, config * TileConfig) (string, []byte, error) {
-    if config == nil {
-        config = TileConfig { AddDimensions: true }
-    }
-    spriteName := slugify.slugify(name, lowercase=False).replace("-","_")
-    //img = img.convert("RGBA")
-    //pixels = list(img.getdata())
+// THIS FUNCTION CAN BE MEMORY INTENSIVE! The entire code file is buffered in memory!
+func PalettedToCode(ptiles [][]byte, config *TileConfig, computed *TileConfigComputed) (string, error) {
+	if config == nil {
+		config = &TileConfig{}
+	}
+	//spriteName := slugify.slugify(name, lowercase=False).replace("-","_")
+	//img = img.convert("RGBA")
+	//pixels = list(img.getdata())
 
-    spriteWidth, spriteHeight, hframes, vframes = expand_tileconfig(config, img)
+	// spriteWidth, spriteHeight, hframes, vframes = expand_tileconfig(config, img)
 
-    // NOTE: images with sizes larger than uint8_t are technically invalid for the code generation,
-    // BUT valid for fx generation. As such, we let them be
+	// NOTE: images with sizes larger than uint8_t are technically invalid for the code generation,
+	// BUT valid for fx generation. As such, we let them be
 
-    spacing = config.spacing
-    transparency = config.use_mask
+	//spacing = config.spacing
+	//transparency = config.use_mask
 
-    #create byte array for bin file
-    size = (spriteHeight+7) // 8 * spriteWidth * hframes * vframes
-    bytes = bytearray([spriteWidth >> 8, spriteWidth & 0xFF, spriteHeight >> 8, spriteHeight & 0xFF])
-    bytes += bytearray(size + (size if transparency else 0))
-    i = 4
+	// create byte array for bin file
+	// size = (spriteHeight+7) // 8 * spriteWidth * hframes * vframes
+	// bytes = bytearray([spriteWidth >> 8, spriteWidth & 0xFF, spriteHeight >> 8, spriteHeight & 0xFF])
+	// bytes += bytearray(size + (size if transparency else 0))
+	//i = 4
 
-    headerfile = io.StringIO()
-    headermask = io.StringIO()  # We track the separate mask even if we don't end up using it.
+	var headerfile strings.Builder
+	var headermask strings.Builder // We track the separate mask even if we don't end up using it.
+	//headerfile = io.StringIO()
+	//headermask = io.StringIO()  # We track the separate mask even if we don't end up using it.
 
-    headerfile.write("constexpr uint8_t {}Width = {};\n".format(spriteName, spriteWidth))
-    headerfile.write("constexpr uint8_t {}Height = {};\n".format(spriteName,spriteHeight))
-    headerfile.write("\n")
-    headerfile.write("constexpr uint8_t {}[] PROGMEM\n".format(spriteName,))
-    headerfile.write("{\n")
+	headerfile.WriteString(fmt.Sprintf("constexpr uint8_t %sWidth = %d;\n", config.Name, computed.SpriteWidth))
+	headerfile.WriteString(fmt.Sprintf("constexpr uint8_t %sHeight = %d;\n", config.Name, computed.SpriteHeight))
+	headerfile.WriteString("\n")
+	headerfile.WriteString(fmt.Sprintf("constexpr uint8_t %s[] PROGMEM\n", config.Name))
+	headerfile.WriteString("{\n")
 
-    if config.add_dimensions:
-        headerfile.write("  {}Width, {}Height,\n\n".format(spriteName, spriteName))
+	if !config.NoDimensions {
+		headerfile.WriteString(fmt.Sprintf("  %sWidth, %sHeight,\n\n", config.Name, config.Name))
+	}
 
-    headermask.write(f"constexpr uint8_t {spriteName}_Mask[] PROGMEM\n{{\n")
+	headermask.WriteString(fmt.Sprintf("constexpr uint8_t %s_Mask[] PROGMEM\n{{\n", config.Name))
 
-    fy = spacing
-    frames = 0
+	// fy = spacing
+	// frames = 0
 
-    for v in range(vframes):
-        fx = spacing
-        for h in range(hframes):
-            headerfile.write("  //Frame {}\n".format(frames))
-            headermask.write("  //Mask Frame {}\n".format(frames))
-            for y in range (0,spriteHeight,8):
-                line = "  "
-                maskline = "  "
-                for x in range (0,spriteWidth):
-                    b = 0
-                    m  = 0
-                    for p in range (0,8):
-                        b = b >> 1
-                        m = m >> 1
-                        if (y + p) < spriteHeight: #for heights that are not a multiple of 8 pixels
-                            pindex = (fy + y + p) * img.size[0] + fx + x
-                            if pixels[pindex][1] > IMAGE_THRESHOLD:
-                                b |= 0x80 #white pixel
-                            if pixels[pindex][3] > ALPHA_THRESHOLD:
-                                m |= 0x80 #opaque pixel
-                            else:
-                                b &= 0x7F #for transparent pixel clear possible white pixel
-                    bytes[i] = b
-                    i += 1
-                    line += "0x{:02X}, ".format(b)
-                    maskline += "0x{:02X}, ".format(m)
-                    if transparency:
-                        # Must always interleave bytes of fx data, regardless of 'separate mask'
-                        bytes[i] = m
-                        i += 1
-                        # But you interleave header only if not separate set!
-                        if not config.separate_header_mask:
-                            line += "0x{:02X}, ".format(m)
-                lastline = (v+1 == vframes) and (h+1 == hframes) and (y+8 >= spriteHeight)
-                if lastline:
-                    line = line [:-2]
-                    maskline = maskline[:-2]
-                headerfile.write(line + "\n")
-                headermask.write(maskline + "\n")
-            if not lastline:
-                headerfile.write("\n")
-                headermask.write("\n")
-            frames += 1
-            fx += spriteWidth + spacing
-        fy += spriteHeight + spacing
+	for i, ptile := range ptiles {
+		headerfile.WriteString(fmt.Sprintf("  //Frame %d", i))
+		headermask.WriteString(fmt.Sprintf("  //Mask Frame %d", i))
+		raw, mask, err := PalettedToRaw(ptile, computed.SpriteWidth, computed.SpriteHeight)
+		if err != nil {
+			return "", err
+		}
+		for j := 0; j < len(raw); j++ {
+			if j%computed.SpriteWidth == 0 {
+				headerfile.WriteString("\n  ")
+				headermask.WriteString("\n  ")
+			}
+			headerfile.WriteString(fmt.Sprintf("0x%02X", raw[j]))
+			headermask.WriteString(fmt.Sprintf("0x%02X", mask[j]))
+			// Interleave mask bytes into header
+			if config.UseMask && !config.SeparateHeaderMask {
+				headerfile.WriteString(fmt.Sprintf(", 0x%02X", mask[j]))
+			}
+			// Wasteful computation to not put the last comma on the very last iteration
+			if i != len(ptiles)-1 && j != len(raw)-1 {
+				headerfile.WriteString(", ")
+				headermask.WriteString(", ")
+			}
+		}
+	}
 
-    headerfile.write("};\n")
-    headermask.write("};\n")
+	// for v in range(vframes):
+	//     fx = spacing
+	//     for h in range(hframes):
+	//         headerfile.write("  //Frame {}\n".format(frames))
+	//         headermask.write("  //Mask Frame {}\n".format(frames))
+	//         for y in range (0,spriteHeight,8):
+	//             line = "  "
+	//             maskline = "  "
+	//             for x in range (0,spriteWidth):
+	//                 b = 0
+	//                 m  = 0
+	//                 for p in range (0,8):
+	//                     b = b >> 1
+	//                     m = m >> 1
+	//                     if (y + p) < spriteHeight: #for heights that are not a multiple of 8 pixels
+	//                         pindex = (fy + y + p) * img.size[0] + fx + x
+	//                         if pixels[pindex][1] > IMAGE_THRESHOLD:
+	//                             b |= 0x80 #white pixel
+	//                         if pixels[pindex][3] > ALPHA_THRESHOLD:
+	//                             m |= 0x80 #opaque pixel
+	//                         else:
+	//                             b &= 0x7F #for transparent pixel clear possible white pixel
+	//                 bytes[i] = b
+	//                 i += 1
+	//                 line += "0x{:02X}, ".format(b)
+	//                 maskline += "0x{:02X}, ".format(m)
+	//                 if transparency:
+	//                     # Must always interleave bytes of fx data, regardless of 'separate mask'
+	//                     bytes[i] = m
+	//                     i += 1
+	//                     # But you interleave header only if not separate set!
+	//                     if not config.separate_header_mask:
+	//                         line += "0x{:02X}, ".format(m)
+	//             lastline = (v+1 == vframes) and (h+1 == hframes) and (y+8 >= spriteHeight)
+	//             if lastline:
+	//                 line = line [:-2]
+	//                 maskline = maskline[:-2]
+	//             headerfile.write(line + "\n")
+	//             headermask.write(maskline + "\n")
+	//         if not lastline:
+	//             headerfile.write("\n")
+	//             headermask.write("\n")
+	//         frames += 1
+	//         fx += spriteWidth + spacing
+	//     fy += spriteHeight + spacing
 
-    # We've been tracking mask separately. Go ahead and add the separate mask to the final data
-    # if that's the exact config desired.
-    if transparency and config.separate_header_mask:
-        headermask.seek(0)
-        headerfile.write("\n" + headermask.read())
-        # bytes += maskbytes # Add maskbytes to end of byte array
+	headerfile.WriteString("};\n")
+	headermask.WriteString("};\n")
 
-    headerfile.seek(0)
+	// We've been tracking mask either separately or interleaved. If separate, Go
+	// ahead and add the separate mask to the final data
+	if config.UseMask && config.SeparateHeaderMask {
+		headerfile.WriteString("\n")
+		headerfile.WriteString(headermask.String())
+	}
+	// # bytes += maskbytes # Add maskbytes to end of byte array
 
-    return headerfile.read(),bytes
+	//headerfile.seek(0)
 
-  }
-
-*/
+	return headerfile.String(), nil
+	//headerfile.read(),bytes
+}

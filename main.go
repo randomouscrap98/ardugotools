@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	AppVersion = "0.2.0"
+	AppVersion = "0.3.0"
 )
 
 // Quick way to fail on error, since most commands are "doing" something on
@@ -567,24 +567,15 @@ func (c *Img2ImgCmd) Run() error {
 	return nil
 }
 
-// type SplitExampleCmd struct {
-// 	Config arduboy.TileConfig `embed:""` //prefix:"config"`
-// }
-//
-// func (c *SplitExampleCmd) Run() error {
-// 	PrintJson(c.Config)
-// 	return nil
-// }
-
 type SplitCodeCmd struct {
-	Config         arduboy.TileConfig `embed:""` //prefix:"config"`
+	Config         arduboy.TileConfig `embed:""`
 	Gentiles       string             `type:"path" short:"t"`
 	Black          string             `default:"#000000" help:"Color to use for black for gentiles"`
 	White          string             `default:"#FFFFFF" help:"Color to use for white for gentiles"`
 	Threshold      uint8              `default:"100" help:"White threshold (grayscale value)"`
 	Alphathreshold uint8              `default:"50" help:"Alpha threshold (values lower are 'transparent')"`
 	Infile         string             `type:"existingfile" default:"spritesheet.png" short:"i"`
-	NoComments     bool               `help:"Don't generate the comments at the top of code"`
+	Nocomments     bool               `help:"Don't generate the comments at the top of code"`
 }
 
 func (c *SplitCodeCmd) Run() error {
@@ -621,12 +612,14 @@ func (c *SplitCodeCmd) Run() error {
 		}
 	}
 
-	if !c.NoComments {
+	if !c.Nocomments {
 		fmt.Printf("// Generated on %s with ardugotools %s\n", time.Now().Format(time.RFC1123), AppVersion)
 		fmt.Printf("// Original file: %s (%d bytes)\n", path.Base(c.Infile), stat.Size())
 		fmt.Printf("// Tilesize: %dx%d Spacing: %d\n",
 			computed.SpriteWidth, computed.SpriteHeight, c.Config.Spacing)
 	}
+
+	// Now generate the actual code
 
 	return nil
 }
@@ -661,10 +654,9 @@ var cli struct {
 		// it's technically invalid
 	} `cmd:"" help:"Commands which work directly on flashcarts, whether on device or filesystem"`
 	Image struct {
-		Bin2Img   Bin2ImgCmd `cmd:"" help:"Convert 1024 byte bin to png img" name:"bin2img"`
-		Img2Bin   Img2BinCmd `cmd:"" help:"Convert any image to arduboy 1024 byte bin format" name:"img2bin"`
-		Img2Title Img2ImgCmd `cmd:"" help:"Convert any image to a 2 color 128x64 black and white image" name:"img2title"`
-		//SplitConfig SplitExampleCmd `cmd:"" help:"Generate usable example json config for splitcode" name:"splitconf"`
+		Bin2Img   Bin2ImgCmd   `cmd:"" help:"Convert 1024 byte bin to png img" name:"bin2img"`
+		Img2Bin   Img2BinCmd   `cmd:"" help:"Convert any image to arduboy 1024 byte bin format" name:"img2bin"`
+		Img2Title Img2ImgCmd   `cmd:"" help:"Convert any image to a 2 color 128x64 black and white image" name:"img2title"`
 		SplitCode SplitCodeCmd `cmd:"" help:"Split image, generate code" name:"splitcode"`
 	} `cmd:"" help:"Commands which work directly on images, such as titles or spritesheets"`
 	Version kong.VersionFlag `help:"Show version information"`
