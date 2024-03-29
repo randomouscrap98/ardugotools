@@ -9,6 +9,7 @@ ardugotools
 *.html
 *.png
 *.gif
+*.h
 *.jpg
 build/
 dist/

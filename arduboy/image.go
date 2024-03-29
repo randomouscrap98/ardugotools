@@ -72,10 +72,13 @@ func PalettedToRaw(paletted []byte, width int, height int) ([]byte, []byte, erro
 			rpos := x + (y/8)*width
 			rbit := uint8(1 << (y & 7))
 			pix := paletted[x+y*width]
-			if pix == 1 {
-				result[rpos] |= rbit
-			} else if pix == 2 {
+			if pix < 2 {
+				// Always set mask if pixel is opaque (0 and 1)
 				mask[rpos] |= rbit
+				if pix == 1 {
+					// Only set result if it's specifically white
+					result[rpos] |= rbit
+				}
 			}
 		}
 	}
@@ -176,7 +179,7 @@ type TileConfig struct {
 	Spacing            int    // Spacing between tiles (including on edges)
 	UseMask            bool   // Whether to use transparency as a data mask
 	SeparateHeaderMask bool   // Separate the mask from the data
-	NoDimensions       bool   // Don't output dimension variables (but why?)
+	NoDimensions       bool   // Don't output dimension variables in data
 	Name               string // Name of the sprite variables to generate
 }
 
@@ -292,52 +295,34 @@ func PalettedToCode(ptiles [][]byte, config *TileConfig, computed *TileConfigCom
 	if config == nil {
 		config = &TileConfig{}
 	}
-	//spriteName := slugify.slugify(name, lowercase=False).replace("-","_")
-	//img = img.convert("RGBA")
-	//pixels = list(img.getdata())
-
-	// spriteWidth, spriteHeight, hframes, vframes = expand_tileconfig(config, img)
-
-	// NOTE: images with sizes larger than uint8_t are technically invalid for the code generation,
-	// BUT valid for fx generation. As such, we let them be
-
-	//spacing = config.spacing
-	//transparency = config.use_mask
-
-	// create byte array for bin file
-	// size = (spriteHeight+7) // 8 * spriteWidth * hframes * vframes
-	// bytes = bytearray([spriteWidth >> 8, spriteWidth & 0xFF, spriteHeight >> 8, spriteHeight & 0xFF])
-	// bytes += bytearray(size + (size if transparency else 0))
-	//i = 4
+	spritename := config.Name
+	if spritename == "" {
+		spritename = "Spritesheet"
+	}
 
 	var headerfile strings.Builder
 	var headermask strings.Builder // We track the separate mask even if we don't end up using it.
-	//headerfile = io.StringIO()
-	//headermask = io.StringIO()  # We track the separate mask even if we don't end up using it.
 
-	headerfile.WriteString(fmt.Sprintf("constexpr uint8_t %sWidth = %d;\n", config.Name, computed.SpriteWidth))
-	headerfile.WriteString(fmt.Sprintf("constexpr uint8_t %sHeight = %d;\n", config.Name, computed.SpriteHeight))
+	headerfile.WriteString(fmt.Sprintf("constexpr uint8_t %sWidth = %d;\n", spritename, computed.SpriteWidth))
+	headerfile.WriteString(fmt.Sprintf("constexpr uint8_t %sHeight = %d;\n", spritename, computed.SpriteHeight))
 	headerfile.WriteString("\n")
-	headerfile.WriteString(fmt.Sprintf("constexpr uint8_t %s[] PROGMEM\n", config.Name))
-	headerfile.WriteString("{\n")
+	headerfile.WriteString(fmt.Sprintf("constexpr uint8_t %s[] PROGMEM\n{", spritename))
 
 	if !config.NoDimensions {
-		headerfile.WriteString(fmt.Sprintf("  %sWidth, %sHeight,\n\n", config.Name, config.Name))
+		headerfile.WriteString(fmt.Sprintf("\n  %sWidth, %sHeight,\n", spritename, spritename))
 	}
 
-	headermask.WriteString(fmt.Sprintf("constexpr uint8_t %s_Mask[] PROGMEM\n{{\n", config.Name))
-
-	// fy = spacing
-	// frames = 0
+	headermask.WriteString(fmt.Sprintf("constexpr uint8_t %s_Mask[] PROGMEM\n{", spritename))
 
 	for i, ptile := range ptiles {
-		headerfile.WriteString(fmt.Sprintf("  //Frame %d", i))
-		headermask.WriteString(fmt.Sprintf("  //Mask Frame %d", i))
+		headerfile.WriteString(fmt.Sprintf("\n  // Frame %d", i))
+		headermask.WriteString(fmt.Sprintf("\n  // Mask Frame %d", i))
 		raw, mask, err := PalettedToRaw(ptile, computed.SpriteWidth, computed.SpriteHeight)
 		if err != nil {
 			return "", err
 		}
 		for j := 0; j < len(raw); j++ {
+			// Put each row of the tile on a different line
 			if j%computed.SpriteWidth == 0 {
 				headerfile.WriteString("\n  ")
 				headermask.WriteString("\n  ")
@@ -349,61 +334,15 @@ func PalettedToCode(ptiles [][]byte, config *TileConfig, computed *TileConfigCom
 				headerfile.WriteString(fmt.Sprintf(", 0x%02X", mask[j]))
 			}
 			// Wasteful computation to not put the last comma on the very last iteration
-			if i != len(ptiles)-1 && j != len(raw)-1 {
+			if !(i == len(ptiles)-1 && j == len(raw)-1) {
 				headerfile.WriteString(", ")
 				headermask.WriteString(", ")
 			}
 		}
 	}
 
-	// for v in range(vframes):
-	//     fx = spacing
-	//     for h in range(hframes):
-	//         headerfile.write("  //Frame {}\n".format(frames))
-	//         headermask.write("  //Mask Frame {}\n".format(frames))
-	//         for y in range (0,spriteHeight,8):
-	//             line = "  "
-	//             maskline = "  "
-	//             for x in range (0,spriteWidth):
-	//                 b = 0
-	//                 m  = 0
-	//                 for p in range (0,8):
-	//                     b = b >> 1
-	//                     m = m >> 1
-	//                     if (y + p) < spriteHeight: #for heights that are not a multiple of 8 pixels
-	//                         pindex = (fy + y + p) * img.size[0] + fx + x
-	//                         if pixels[pindex][1] > IMAGE_THRESHOLD:
-	//                             b |= 0x80 #white pixel
-	//                         if pixels[pindex][3] > ALPHA_THRESHOLD:
-	//                             m |= 0x80 #opaque pixel
-	//                         else:
-	//                             b &= 0x7F #for transparent pixel clear possible white pixel
-	//                 bytes[i] = b
-	//                 i += 1
-	//                 line += "0x{:02X}, ".format(b)
-	//                 maskline += "0x{:02X}, ".format(m)
-	//                 if transparency:
-	//                     # Must always interleave bytes of fx data, regardless of 'separate mask'
-	//                     bytes[i] = m
-	//                     i += 1
-	//                     # But you interleave header only if not separate set!
-	//                     if not config.separate_header_mask:
-	//                         line += "0x{:02X}, ".format(m)
-	//             lastline = (v+1 == vframes) and (h+1 == hframes) and (y+8 >= spriteHeight)
-	//             if lastline:
-	//                 line = line [:-2]
-	//                 maskline = maskline[:-2]
-	//             headerfile.write(line + "\n")
-	//             headermask.write(maskline + "\n")
-	//         if not lastline:
-	//             headerfile.write("\n")
-	//             headermask.write("\n")
-	//         frames += 1
-	//         fx += spriteWidth + spacing
-	//     fy += spriteHeight + spacing
-
-	headerfile.WriteString("};\n")
-	headermask.WriteString("};\n")
+	headerfile.WriteString("\n};\n")
+	headermask.WriteString("\n};\n")
 
 	// We've been tracking mask either separately or interleaved. If separate, Go
 	// ahead and add the separate mask to the final data
@@ -411,10 +350,6 @@ func PalettedToCode(ptiles [][]byte, config *TileConfig, computed *TileConfigCom
 		headerfile.WriteString("\n")
 		headerfile.WriteString(headermask.String())
 	}
-	// # bytes += maskbytes # Add maskbytes to end of byte array
-
-	//headerfile.seek(0)
 
 	return headerfile.String(), nil
-	//headerfile.read(),bytes
 }

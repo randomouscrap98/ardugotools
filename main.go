@@ -617,9 +617,12 @@ func (c *SplitCodeCmd) Run() error {
 		fmt.Printf("// Original file: %s (%d bytes)\n", path.Base(c.Infile), stat.Size())
 		fmt.Printf("// Tilesize: %dx%d Spacing: %d\n",
 			computed.SpriteWidth, computed.SpriteHeight, c.Config.Spacing)
+		fmt.Printf("\n")
 	}
 
 	// Now generate the actual code
+	code, err := arduboy.PalettedToCode(ptiles, &c.Config, computed)
+	fmt.Printf(code)
 
 	return nil
 }
