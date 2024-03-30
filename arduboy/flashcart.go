@@ -184,7 +184,7 @@ func ReadFlashcartInto(sercon io.ReadWriter, address int, length int, output io.
 	if readbuf == nil {
 		readbuf = CreateReadFlashcartBuffer()
 	}
-	readLength := (len(readbuf) % FXPageSize) * FXPageSize
+	readLength := (len(readbuf) / FXPageSize) * FXPageSize
 	if readLength == 0 {
 		return fmt.Errorf("buffer too small! min: %d", FXPageSize)
 	}
@@ -192,9 +192,10 @@ func ReadFlashcartInto(sercon io.ReadWriter, address int, length int, output io.
 	sb := make([]byte, 1)
 
 	for addressOffset := 0; addressOffset < totalLength; addressOffset += readLength {
-		rwep.WritePass(AddressCommandFlashcartPage(uint16(addressOffset / FXPageSize)))
+		rwep.WritePass(AddressCommandFlashcartPage(uint16((address + addressOffset) / FXPageSize)))
 		rwep.ReadPass(sb)
 		readNow := min(totalLength-addressOffset, readLength)
+		log.Printf("addressOffset: %d, readNow: %d, skip: %d", addressOffset, readNow, skip)
 		rwep.WritePass(ReadFlashcartCommand(uint16(readNow)))
 		rwep.ReadPass(readbuf[:readNow])
 		output.Write(readbuf[skip:readNow])
@@ -330,8 +331,11 @@ func ReadWholeFlashcart(sercon io.ReadWriter, output io.Writer, logProgress bool
 			}
 		}
 
+		slotSize := int(header.SlotPages) * FXPageSize
+
 		if logProgress {
-			log.Printf("[%d] Reading: %s (%s - %s)\n", headerCount+1, header.Title, header.Developer, header.Version)
+			log.Printf("[%d] Reading: %s (%s - %s) - %d bytes\n",
+				headerCount+1, header.Title, header.Developer, header.Version, slotSize)
 		}
 
 		// Write the header. We'll be reading the rest of the slot now
@@ -340,17 +344,14 @@ func ReadWholeFlashcart(sercon io.ReadWriter, output io.Writer, logProgress bool
 			return 0, 0, err
 		}
 
-		// The rest of the slot needs to be read. If for some reason this value
-		// is 0, it will still work with the next loop
-		readLength := int(header.SlotPages)*FXPageSize - FxHeaderLength
-		headerAddr += FxHeaderLength
-
-		err = ReadFlashcartInto(sercon, headerAddr, readLength, output, readBuffer)
+		// Read the rest of the slot (skipping the header)
+		err = ReadFlashcartInto(sercon, headerAddr+FxHeaderLength, slotSize-FxHeaderLength, output, readBuffer)
 		if err != nil {
 			return 0, 0, err
 		}
 
 		// Move to the next header
+		headerAddr += slotSize
 		headerCount++
 	}
 }

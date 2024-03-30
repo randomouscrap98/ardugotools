@@ -387,6 +387,9 @@ func (c *FlashcartReadAtCmd) Run() error {
 	if c.Address >= extdata.Jedec.Capacity {
 		log.Fatalf("Address too high! Max: %d", extdata.Jedec.Capacity-1)
 	}
+	if c.Address+c.Length > extdata.Jedec.Capacity {
+		log.Fatalf("Read past the end of the flashcart! Max length for address %d: %d", c.Address, extdata.Jedec.Capacity-c.Address)
+	}
 	// Now, we can simply read right into the writer
 	err = arduboy.ReadFlashcartInto(sercon, c.Address, c.Length, file, nil)
 	fatalIfErr(c.Device, "read flashcart", err)
@@ -482,17 +485,62 @@ func (c *FlashcartWriteDevCmd) Run() error {
 			err, extdata.Jedec.Capacity, flashcartSize, fileSize)
 	}
 	address := extdata.Jedec.Capacity - len(fxdata)
-	realPage, realLength, err := arduboy.WriteFlashcart(sercon, address, fxdata, true)
+	realAddress, realLength, err := arduboy.WriteFlashcart(sercon, address, fxdata, true)
 	fatalIfErr(c.Device, "write flash data", err)
-	log.Printf("Finished writing %d bytes to flashcart at page %d\n", realLength, realPage)
+	log.Printf("Finished writing %d bytes to flashcart at address %d\n", realLength, realAddress)
 	// Return data about the write
 	result := make(map[string]interface{})
 	result["Filename"] = c.Infile
 	result["DataLength"] = fileSize
 	result["DataStartAddress"] = address
+	result["DataWriteAddress"] = realAddress
+	result["DataWriteLength"] = realLength
 	result["Capacity"] = extdata.Jedec.Capacity
 	result["FlashcartLength"] = flashcartSize
-	result["DataWritePage"] = realPage
+	PrintJson(result)
+	return nil
+}
+
+// Flashcart write any command
+type FlashcartWriteAtCmd struct {
+	Device           string `arg:"" help:"The system device to read from (use 'any' for first)"`
+	Address          int    `arg:"" help:"The byte-level address to start writing to. Negative for 'from end'"`
+	Infile           string `type:"existingfile" default:"flashchunk.bin" short:"i"`
+	OverrideCapacity int    `help:"Force device capacity (NOT RECOMMENDED)"`
+}
+
+func (c *FlashcartWriteAtCmd) Run() error {
+	rawfile, err := os.ReadFile(c.Infile)
+	fatalIfErr(c.Infile, "open binary file", err)
+	if len(rawfile) == 0 {
+		log.Fatalf("Must not be 0-length file!")
+	}
+	// Force connect with bootloader
+	sercon, d := connectWithBootloader(c.Device)
+	defer sercon.Close()
+	extdata := mustHaveFlashcart(sercon, d)
+	if c.OverrideCapacity > 0 {
+		extdata.Jedec.Capacity = c.OverrideCapacity
+	}
+	if c.Address < 0 {
+		c.Address = extdata.Jedec.Capacity + c.Address
+	}
+	if c.Address >= extdata.Jedec.Capacity {
+		log.Fatalf("Address too high! Max: %d", extdata.Jedec.Capacity-1)
+	}
+	if c.Address+len(rawfile) > extdata.Jedec.Capacity {
+		log.Fatalf("Read past the end of the flashcart! Max length for address %d: %d", c.Address, extdata.Jedec.Capacity-c.Address)
+	}
+	// Now, we can simply write the data
+	realAddress, realLength, err := arduboy.WriteFlashcart(sercon, c.Address, rawfile, true)
+	fatalIfErr(c.Device, "write to flashcart", err)
+	log.Printf("Wrote %d total bytes at %d using file %s\n", realLength, realAddress, c.Infile)
+	// Return data about the save
+	result := make(map[string]interface{})
+	result["Filename"] = c.Infile
+	result["DataLength"] = len(rawfile)
+	result["DataStartAddress"] = c.Address
+	result["DataWriteAddress"] = realAddress
 	result["DataWriteLength"] = realLength
 	PrintJson(result)
 	return nil
@@ -756,6 +804,7 @@ var cli struct {
 		Write    FlashcartWriteCmd    `cmd:"" help:"Write full flashcart to arduboy"`
 		Writedev FlashcartWriteDevCmd `cmd:"" help:"Write dev data to the end of arduboy flashcart"`
 		Readat   FlashcartReadAtCmd   `cmd:"" help:"Read some subset of data from anywhere in the flashcart"`
+		Writeat  FlashcartWriteAtCmd  `cmd:"" help:"Write some arbitrary data anywhere in the flashcart"`
 		// Could analyze flashcart to figure out what device it might be for, and whether
 		// it's technically invalid
 	} `cmd:"" help:"Commands which work directly on flashcarts, whether on device or filesystem"`
