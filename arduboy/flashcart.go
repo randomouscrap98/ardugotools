@@ -278,10 +278,10 @@ func WriteFlashcart(sercon io.ReadWriter, address int, data []byte, logProgress 
 	rwep := ReadWriteErrorPass{rw: sercon}
 	onebyte := make([]byte, 1)
 
-	defer ResetRgbButtonState(sercon)
+	//defer ResetRgbButtonState(sercon)
 	for i := 0; i < len(data); i += FXBlockSize {
-		var rgbState uint8 = LEDCtrlBtnOff | uint8(i&0b111)
-		SetRgbButtonState(sercon, rgbState)
+		//var rgbState uint8 = LEDCtrlBtnOff | uint8(i&0b111)
+		//SetRgbButtonState(sercon, rgbState)
 		if logProgress {
 			log.Printf("Writing block# %d at page %d", blocknum, i)
 		}

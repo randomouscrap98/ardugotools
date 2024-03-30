@@ -42,6 +42,20 @@ func mustHaveFlashcart(sercon io.ReadWriteCloser, device *arduboy.BasicDeviceInf
 	return extdata
 }
 
+func forceOpen(fp string) (*os.File, os.FileInfo) {
+	f, err := os.Open(fp)
+	fatalIfErr(fp, "open read file", err)
+	fi, err := f.Stat()
+	fatalIfErr(fp, "stat read file", err)
+	return f, fi
+}
+
+func forceCreate(fp string) *os.File {
+	f, err := os.Create(fp)
+	fatalIfErr(fp, "create write file", err)
+	return f
+}
+
 // **********************************
 // *       DEVICES COMMANDS         *
 // **********************************
@@ -95,8 +109,7 @@ func (c *SketchReadCmd) Run() error {
 	fatalIfErr(c.Device, "read sketch", err)
 	log.Printf("Read %d bytes from %s\n", len(sketch), d.SmallString())
 	// Open and save file
-	file, err := os.Create(c.Outfile)
-	fatalIfErr(c.Outfile, "open file for writing", err)
+	file := forceCreate(c.Outfile)
 	defer file.Close()
 	err = arduboy.BinToHex(sketch, file)
 	fatalIfErr(c.Outfile, "convert sketch to hex", err)
@@ -114,15 +127,15 @@ func (c *SketchReadCmd) Run() error {
 type RawHexWriteCmd struct {
 	Device string `arg:"" default:"any" help:"The system device to write to (use 'any' for first)"`
 	Infile string `type:"existingfile" default:"sketch.hex" short:"i" help:"File to load hex from"`
-	Runnow bool   `help:"Run sketch immediately"`
+	RunNow bool   `help:"Run sketch immediately"`
 }
 
 func (c *RawHexWriteCmd) Run() error {
 	sercon, d := connectWithBootloader(c.Device)
 	defer sercon.Close()
 	// Go find the file first
-	sketchRaw, err := os.Open(c.Infile)
-	fatalIfErr(c.Device, "read file", err)
+	sketchRaw, _ := forceOpen(c.Infile)
+	defer sketchRaw.Close()
 	// Now write the sketch. This includes validation steps
 	sketch, writtenPages, err := arduboy.WriteHex(sercon, sketchRaw, false)
 	fatalIfErr(c.Device, "write raw hex", err)
@@ -140,7 +153,7 @@ func (c *RawHexWriteCmd) Run() error {
 		}
 	}
 	log.Printf("Wrote %d pages to %s\n", numwritten, d.SmallString())
-	if c.Runnow {
+	if c.RunNow {
 		arduboy.ExitBootloader(sercon)
 	}
 	hash := arduboy.Md5String(sketch)
@@ -167,8 +180,8 @@ func (c *SketchWriteCmd) Run() error {
 	sercon, d := connectWithBootloader(c.Device)
 	defer sercon.Close()
 	// Go find the file first
-	sketchRaw, err := os.Open(c.Infile)
-	fatalIfErr(c.Device, "read file", err)
+	sketchRaw, _ := forceOpen(c.Infile)
+	defer sketchRaw.Close()
 	// Now write the sketch. This includes validation steps
 	sketch, writtenPages, err := arduboy.WriteHex(sercon, sketchRaw, true)
 	fatalIfErr(c.Device, "write raw hex", err)
@@ -218,8 +231,7 @@ func (c *EepromReadCmd) Run() error {
 	log.Printf("Read %d bytes from %s (full eeprom)\n", len(eeprom), d.SmallString())
 	hash := arduboy.Md5String(eeprom)
 	// Open and save file
-	file, err := os.Create(c.Outfile)
-	fatalIfErr(c.Outfile, "open file for writing", err)
+	file := forceCreate(c.Outfile)
 	defer file.Close()
 	num, err := file.Write(eeprom)
 	if num != len(eeprom) {
@@ -296,8 +308,8 @@ func (c *FlashcartScanCmd) Run() error {
 	// Can scan either flashcart file or the real device
 	if deviceIsFile {
 		log.Printf("%s is a file, scanning file\n", c.Device)
-		data, err := os.Open(c.Device)
-		fatalIfErr(c.Device, "open flashcart file", err)
+		data, _ := forceOpen(c.Device)
+		defer data.Close()
 		deviceId = c.Device
 		deviceName = c.Device
 		result, err = arduboy.ScanFlashcartFileMeta(data, c.Images)
@@ -324,7 +336,7 @@ func (c *FlashcartScanCmd) Run() error {
 	return nil
 }
 
-// Flashcart read command
+// Flashcart read command (whole flashcart)
 type FlashcartReadCmd struct {
 	Device  string `arg:"" default:"any" help:"The system device to read from (use 'any' for first)"`
 	Outfile string `type:"path" short:"o"`
@@ -335,8 +347,7 @@ func (c *FlashcartReadCmd) Run() error {
 	if c.Outfile == "" {
 		c.Outfile = fmt.Sprintf("flashcart_%s.bin", FileSafeDateTime())
 	}
-	file, err := os.Create(c.Outfile)
-	fatalIfErr(c.Outfile, "open file for writing", err)
+	file := forceCreate(c.Outfile)
 	defer file.Close()
 	// Read flashcart
 	sercon, d := connectWithBootloader(c.Device)
@@ -354,56 +365,7 @@ func (c *FlashcartReadCmd) Run() error {
 	return nil
 }
 
-// Flashcart read any command
-type FlashcartReadAtCmd struct {
-	Device           string `arg:"" help:"The system device to read from (use 'any' for first)"`
-	Address          int    `arg:"" help:"The byte-level address to read flashcart data from. Negative for 'from end'"`
-	Length           int    `arg:"" help:"The length of data to retrieve"`
-	Outfile          string `type:"path" short:"o"`
-	OverrideCapacity int    `help:"Force device capacity (NOT RECOMMENDED)"`
-}
-
-func (c *FlashcartReadAtCmd) Run() error {
-	if c.Length == 0 {
-		log.Fatalf("Must provide a non-zero length!")
-	}
-	// Figure out save location
-	if c.Outfile == "" {
-		c.Outfile = fmt.Sprintf("flashchunk_%s.bin", FileSafeDateTime())
-	}
-	file, err := os.Create(c.Outfile)
-	fatalIfErr(c.Outfile, "open file for writing", err)
-	defer file.Close()
-	// Force connect with bootloader
-	sercon, d := connectWithBootloader(c.Device)
-	defer sercon.Close()
-	extdata := mustHaveFlashcart(sercon, d)
-	if c.OverrideCapacity > 0 {
-		extdata.Jedec.Capacity = c.OverrideCapacity
-	}
-	if c.Address < 0 {
-		c.Address = extdata.Jedec.Capacity + c.Address
-	}
-	if c.Address >= extdata.Jedec.Capacity {
-		log.Fatalf("Address too high! Max: %d", extdata.Jedec.Capacity-1)
-	}
-	if c.Address+c.Length > extdata.Jedec.Capacity {
-		log.Fatalf("Read past the end of the flashcart! Max length for address %d: %d", c.Address, extdata.Jedec.Capacity-c.Address)
-	}
-	// Now, we can simply read right into the writer
-	err = arduboy.ReadFlashcartInto(sercon, c.Address, c.Length, file, nil)
-	fatalIfErr(c.Device, "read flashcart", err)
-	log.Printf("Read %d flashcart bytes into %s\n", c.Length, c.Outfile)
-	// Return data about the save
-	result := make(map[string]interface{})
-	result["Filename"] = c.Outfile
-	result["Length"] = c.Length
-	result["Address"] = c.Address
-	PrintJson(result)
-	return nil
-}
-
-// Flashcart write command
+// Flashcart write command (whole flashcart)
 type FlashcartWriteCmd struct {
 	Device           string `arg:"" default:"any" help:"The system device to write to (use 'any' for first)"`
 	Infile           string `type:"existingfile" default:"flashcart.bin" short:"i"`
@@ -421,11 +383,8 @@ func (c *FlashcartWriteCmd) Run() error {
 		extdata.Jedec.Capacity = c.OverrideCapacity
 	}
 	// Figure out save location, open file
-	file, err := os.Open(c.Infile)
-	fatalIfErr(c.Infile, "open file for reading", err)
+	file, fi := forceOpen(c.Infile)
 	defer file.Close()
-	fi, err := file.Stat()
-	fatalIfErr(c.Infile, "check file", err)
 	fileSize := int(fi.Size())
 	if !extdata.Jedec.FitsFlashcart(fileSize) {
 		log.Fatalf("Flashcart too big for device! Size: %d, capacity: %d\n",
@@ -447,7 +406,114 @@ func (c *FlashcartWriteCmd) Run() error {
 	return nil
 }
 
-// Flashcart write command
+// Flashcart read any command
+type FlashcartReadAtCmd struct {
+	Device           string `arg:"" help:"The system device to read from (use 'any' for first)"`
+	Address          int    `arg:"" help:"The byte-level address to read flashcart data from."`
+	Length           int    `arg:"" help:"The length of data to retrieve"`
+	Outfile          string `type:"path" short:"o"`
+	Fromend          bool   `help:"Interpret address as CAPACITY-address (like a negative index)"`
+	OverrideCapacity int    `help:"Force device capacity (NOT RECOMMENDED)"`
+}
+
+func (c *FlashcartReadAtCmd) Run() error {
+	if c.Length == 0 {
+		log.Fatalf("Must provide a non-zero length!")
+	}
+	// Figure out save location
+	if c.Outfile == "" {
+		c.Outfile = fmt.Sprintf("flashchunk_%s.bin", FileSafeDateTime())
+	}
+	file := forceCreate(c.Outfile)
+	defer file.Close()
+	// Force connect with bootloader
+	sercon, d := connectWithBootloader(c.Device)
+	defer sercon.Close()
+	extdata := mustHaveFlashcart(sercon, d)
+	if c.OverrideCapacity > 0 {
+		extdata.Jedec.Capacity = c.OverrideCapacity
+	}
+	// It's ok if the address is 0: we'll catch the badness later
+	if c.Fromend && c.Address >= 0 {
+		c.Address = -c.Address
+	}
+	if c.Address < 0 {
+		c.Address = extdata.Jedec.Capacity + c.Address
+	}
+	if c.Address >= extdata.Jedec.Capacity {
+		log.Fatalf("Address too high! Max: %d", extdata.Jedec.Capacity-1)
+	}
+	if c.Address+c.Length > extdata.Jedec.Capacity {
+		log.Fatalf("Read past the end of the flashcart! Max length for address %d: %d", c.Address, extdata.Jedec.Capacity-c.Address)
+	}
+	// Now, we can simply read right into the writer
+	arduboy.SetRgbButtonState(sercon, arduboy.LEDCtrlGrOn)
+	defer arduboy.ResetRgbButtonState(sercon)
+	err := arduboy.ReadFlashcartInto(sercon, c.Address, c.Length, file, nil)
+	fatalIfErr(c.Device, "read flashcart", err)
+	log.Printf("Read %d flashcart bytes into %s\n", c.Length, c.Outfile)
+	// Return data about the save
+	result := make(map[string]interface{})
+	result["Filename"] = c.Outfile
+	result["Length"] = c.Length
+	result["Address"] = c.Address
+	PrintJson(result)
+	return nil
+}
+
+// Flashcart write any command
+type FlashcartWriteAtCmd struct {
+	Device           string `arg:"" help:"The system device to read from (use 'any' for first)"`
+	Address          int    `arg:"" help:"The byte-level address to start writing to."`
+	Infile           string `type:"existingfile" default:"flashchunk.bin" short:"i"`
+	Fromend          bool   `help:"Interpret address as CAPACITY-address (like a negative index)"`
+	OverrideCapacity int    `help:"Force device capacity (NOT RECOMMENDED)"`
+}
+
+func (c *FlashcartWriteAtCmd) Run() error {
+	rawfile, err := os.ReadFile(c.Infile)
+	fatalIfErr(c.Infile, "open binary file", err)
+	if len(rawfile) == 0 {
+		log.Fatalf("Must not be 0-length file!")
+	}
+	// Force connect with bootloader
+	sercon, d := connectWithBootloader(c.Device)
+	defer sercon.Close()
+	extdata := mustHaveFlashcart(sercon, d)
+	if c.OverrideCapacity > 0 {
+		extdata.Jedec.Capacity = c.OverrideCapacity
+	}
+	// It's ok if the address is 0: we'll catch the badness later
+	if c.Fromend && c.Address >= 0 {
+		c.Address = -c.Address
+	}
+	if c.Address < 0 {
+		c.Address = extdata.Jedec.Capacity + c.Address
+	}
+	if c.Address >= extdata.Jedec.Capacity {
+		log.Fatalf("Address too high! Max: %d", extdata.Jedec.Capacity-1)
+	}
+	if c.Address+len(rawfile) > extdata.Jedec.Capacity {
+		log.Fatalf("Read past the end of the flashcart! Max length for address %d: %d", c.Address, extdata.Jedec.Capacity-c.Address)
+	}
+	// Now, we can simply write the data
+	arduboy.SetRgbButtonState(sercon, arduboy.LEDCtrlGrOn|arduboy.LEDCtrlRdOn)
+	defer arduboy.ResetRgbButtonState(sercon)
+	realAddress, realLength, err := arduboy.WriteFlashcart(sercon, c.Address, rawfile, true)
+	fatalIfErr(c.Device, "write to flashcart", err)
+	log.Printf("Wrote %d total bytes at %d using file %s\n", realLength, realAddress, c.Infile)
+	// Return data about the save
+	result := make(map[string]interface{})
+	result["Filename"] = c.Infile
+	result["DataLength"] = len(rawfile)
+	result["DataStartAddress"] = c.Address
+	result["DataWriteAddress"] = realAddress
+	result["DataWriteLength"] = realLength
+	PrintJson(result)
+	return nil
+}
+
+// Flashcart write dev data command
 type FlashcartWriteDevCmd struct {
 	Device           string `arg:"" default:"any" help:"The system device to write to (use 'any' for first)"`
 	Infile           string `type:"existingfile" default:"fxdata.bin" short:"i"`
@@ -465,11 +531,8 @@ func (c *FlashcartWriteDevCmd) Run() error {
 		extdata.Jedec.Capacity = c.OverrideCapacity
 	}
 	// Some file checks to start with, and open the file
-	file, err := os.Open(c.Infile)
-	fatalIfErr(c.Infile, "open file for reading", err)
+	file, fi := forceOpen(c.Infile)
 	defer file.Close()
-	fi, err := file.Stat()
-	fatalIfErr(c.Infile, "check file", err)
 	fileSize := int(fi.Size())
 	if !c.NoCheck && fileSize%arduboy.FXPageSize > 0 {
 		log.Fatalf("VALIDATION FAIL: Fxdata not page aligned! Pagesize: %d, Filesize: %d",
@@ -485,6 +548,8 @@ func (c *FlashcartWriteDevCmd) Run() error {
 			err, extdata.Jedec.Capacity, flashcartSize, fileSize)
 	}
 	address := extdata.Jedec.Capacity - len(fxdata)
+	arduboy.SetRgbButtonState(sercon, arduboy.LEDCtrlGrOn|arduboy.LEDCtrlRdOn)
+	defer arduboy.ResetRgbButtonState(sercon)
 	realAddress, realLength, err := arduboy.WriteFlashcart(sercon, address, fxdata, true)
 	fatalIfErr(c.Device, "write flash data", err)
 	log.Printf("Finished writing %d bytes to flashcart at address %d\n", realLength, realAddress)
@@ -497,51 +562,6 @@ func (c *FlashcartWriteDevCmd) Run() error {
 	result["DataWriteLength"] = realLength
 	result["Capacity"] = extdata.Jedec.Capacity
 	result["FlashcartLength"] = flashcartSize
-	PrintJson(result)
-	return nil
-}
-
-// Flashcart write any command
-type FlashcartWriteAtCmd struct {
-	Device           string `arg:"" help:"The system device to read from (use 'any' for first)"`
-	Address          int    `arg:"" help:"The byte-level address to start writing to. Negative for 'from end'"`
-	Infile           string `type:"existingfile" default:"flashchunk.bin" short:"i"`
-	OverrideCapacity int    `help:"Force device capacity (NOT RECOMMENDED)"`
-}
-
-func (c *FlashcartWriteAtCmd) Run() error {
-	rawfile, err := os.ReadFile(c.Infile)
-	fatalIfErr(c.Infile, "open binary file", err)
-	if len(rawfile) == 0 {
-		log.Fatalf("Must not be 0-length file!")
-	}
-	// Force connect with bootloader
-	sercon, d := connectWithBootloader(c.Device)
-	defer sercon.Close()
-	extdata := mustHaveFlashcart(sercon, d)
-	if c.OverrideCapacity > 0 {
-		extdata.Jedec.Capacity = c.OverrideCapacity
-	}
-	if c.Address < 0 {
-		c.Address = extdata.Jedec.Capacity + c.Address
-	}
-	if c.Address >= extdata.Jedec.Capacity {
-		log.Fatalf("Address too high! Max: %d", extdata.Jedec.Capacity-1)
-	}
-	if c.Address+len(rawfile) > extdata.Jedec.Capacity {
-		log.Fatalf("Read past the end of the flashcart! Max length for address %d: %d", c.Address, extdata.Jedec.Capacity-c.Address)
-	}
-	// Now, we can simply write the data
-	realAddress, realLength, err := arduboy.WriteFlashcart(sercon, c.Address, rawfile, true)
-	fatalIfErr(c.Device, "write to flashcart", err)
-	log.Printf("Wrote %d total bytes at %d using file %s\n", realLength, realAddress, c.Infile)
-	// Return data about the save
-	result := make(map[string]interface{})
-	result["Filename"] = c.Infile
-	result["DataLength"] = len(rawfile)
-	result["DataStartAddress"] = c.Address
-	result["DataWriteAddress"] = realAddress
-	result["DataWriteLength"] = realLength
 	PrintJson(result)
 	return nil
 }
@@ -560,14 +580,12 @@ func (c *Hex2BinCmd) Run() error {
 	if c.Outfile == "" {
 		c.Outfile = fmt.Sprintf("sketch_hex2bin_%s.bin", FileSafeDateTime())
 	}
-	sketch, err := os.Open(c.Infile)
-	fatalIfErr("hex2bin", "read hex file", err)
+	sketch, _ := forceOpen(c.Infile)
 	defer sketch.Close()
 	bin, err := arduboy.HexToBin(sketch)
 	fatalIfErr("hex2bin", "convert hex", err)
 	log.Printf("Hex real data length is %d\n", len(bin))
-	dest, err := os.Create(c.Outfile)
-	fatalIfErr("hex2bin", "write file", err)
+	dest := forceCreate(c.Outfile)
 	defer dest.Close()
 	dest.Write(bin)
 	result := make(map[string]interface{})
@@ -590,8 +608,7 @@ func (c *Bin2HexCmd) Run() error {
 	}
 	sketch, err := os.ReadFile(c.Infile)
 	fatalIfErr("bin2hex", "read bin file", err)
-	dest, err := os.Create(c.Outfile)
-	fatalIfErr("bin2hex", "write file", err)
+	dest := forceCreate(c.Outfile)
 	defer dest.Close()
 	err = arduboy.BinToHex(sketch, dest)
 	fatalIfErr("bin2hex", "convert bin", err)
@@ -615,11 +632,8 @@ func (c *Img2BinCmd) Run() error {
 	if c.Outfile == "" {
 		c.Outfile = fmt.Sprintf("image_img2bin_%s.bin", FileSafeDateTime())
 	}
-	img, err := os.Open(c.Infile)
-	fatalIfErr("img2bin", "read image file", err)
+	img, stat := forceOpen(c.Infile)
 	defer img.Close()
-	stat, err := img.Stat()
-	fatalIfErr("img2bin", "getFileInfo", err)
 	paletted, err := arduboy.RawImageToPalettedTitle(img, c.Threshold)
 	fatalIfErr("img2bin", "convert image to palette", err)
 	bin, err := arduboy.PalettedToRawTitle(paletted)
@@ -656,8 +670,7 @@ func (c *Bin2ImgCmd) Run() error {
 	fatalIfErr("bin2img", "parse black color", err)
 	white, err := csscolorparser.Parse(c.White)
 	fatalIfErr("bin2img", "parse white color", err)
-	imgfile, err := os.Create(c.Outfile)
-	fatalIfErr("bin2img", "create file", err)
+	imgfile := forceCreate(c.Outfile)
 	defer imgfile.Close()
 	err = arduboy.PalettedToImage(paletted, arduboy.ScreenWidth, arduboy.ScreenHeight,
 		black, white, c.Format, imgfile)
@@ -687,19 +700,15 @@ func (c *Img2ImgCmd) Run() error {
 	if c.Outfile == "" {
 		c.Outfile = fmt.Sprintf("image_convert_%s.%s", FileSafeDateTime(), c.Format)
 	}
-	original, err := os.Open(c.Infile)
-	fatalIfErr("img2img", "read image file", err)
+	original, stat := forceOpen(c.Infile)
 	defer original.Close()
-	stat, err := original.Stat()
-	fatalIfErr("img2bin", "getFileInfo", err)
 	paletted, err := arduboy.RawImageToPalettedTitle(original, c.Threshold)
 	fatalIfErr("img2img", "convert to paletted", err)
 	black, err := csscolorparser.Parse(c.Black)
 	fatalIfErr("img2img", "parse black color", err)
 	white, err := csscolorparser.Parse(c.White)
 	fatalIfErr("img2img", "parse white color", err)
-	imgfile, err := os.Create(c.Outfile)
-	fatalIfErr("img2img", "write file", err)
+	imgfile := forceCreate(c.Outfile)
 	defer imgfile.Close()
 	err = arduboy.PalettedToImage(paletted, arduboy.ScreenWidth, arduboy.ScreenHeight,
 		black, white, c.Format, imgfile)
@@ -728,11 +737,8 @@ type SplitCodeCmd struct {
 
 func (c *SplitCodeCmd) Run() error {
 	log.Printf("Config: %v\n", c.Config)
-	sprites, err := os.Open(c.Infile)
-	fatalIfErr("splitcode", "read image file", err)
+	sprites, stat := forceOpen(c.Infile)
 	defer sprites.Close()
-	stat, err := sprites.Stat()
-	fatalIfErr("splitcode", "get file info", err)
 	tiles, computed, err := arduboy.SplitImageToTiles(sprites, &c.Config)
 	fatalIfErr("splitcode", "split image to tiles", err)
 	log.Printf("Split into %d %dx%d tiles\n", len(tiles), computed.SpriteWidth, computed.SpriteHeight)
@@ -752,8 +758,8 @@ func (c *SplitCodeCmd) Run() error {
 		// Now for each image, dump it as a png
 		for i, ptile := range ptiles {
 			tpath := filepath.Join(c.Gentiles, fmt.Sprintf("%d.png", i))
-			tfile, err := os.Create(tpath)
-			fatalIfErr("splitcode", fmt.Sprintf("write tile %d", i), err)
+			tfile := forceCreate(tpath)
+			defer tfile.Close()
 			log.Printf("Writing tile file %s\n", tpath)
 			arduboy.PalettedToImage(ptile, computed.SpriteWidth,
 				computed.SpriteHeight, black, white, "png", tfile)
