@@ -192,10 +192,11 @@ func ReadFlashcartInto(sercon io.ReadWriter, address int, length int, output io.
 	sb := make([]byte, 1)
 
 	for addressOffset := 0; addressOffset < totalLength; addressOffset += readLength {
-		rwep.WritePass(AddressCommandFlashcartPage(uint16((address + addressOffset) / FXPageSize)))
+		readAddress := address + addressOffset
+		rwep.WritePass(AddressCommandFlashcartPage(uint16(readAddress / FXPageSize)))
 		rwep.ReadPass(sb)
 		readNow := min(totalLength-addressOffset, readLength)
-		log.Printf("addressOffset: %d, readNow: %d, skip: %d", addressOffset, readNow, skip)
+		log.Printf("readAddress: %d, readNow: %d, skip: %d", readAddress, readNow, skip)
 		rwep.WritePass(ReadFlashcartCommand(uint16(readNow)))
 		rwep.ReadPass(readbuf[:readNow])
 		output.Write(readbuf[skip:readNow])
@@ -241,8 +242,8 @@ func ReadFlashcartOptimized(sercon io.ReadWriter, page uint16, length uint16) ([
 // it (since writing flashes the entire 65k block). Return the actual address it started
 // writing to, and the total write size
 func WriteFlashcart(sercon io.ReadWriter, address int, data []byte, logProgress bool) (int, int, error) {
-	blockAlignedAddress := address / FXBlockSize * FXBlockSize
-	backfillLength := blockAlignedAddress - address
+	blockAlignedAddress := (address / FXBlockSize) * FXBlockSize
+	backfillLength := address - blockAlignedAddress
 	// Read backfill to get the data block aligned and not accidentally clear pre data
 	if backfillLength > 0 {
 		if logProgress {
@@ -292,6 +293,7 @@ func WriteFlashcart(sercon io.ReadWriter, address int, data []byte, logProgress 
 		if rwep.err != nil {
 			return 0, 0, rwep.err
 		}
+		blocknum++
 	}
 
 	return blockAlignedAddress, len(data), nil

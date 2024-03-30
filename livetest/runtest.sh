@@ -23,6 +23,16 @@ $tbc flashcart writeat any 0 -i $idr/test1.bin
 $tbc flashcart readat any 0 1031 -o $idr/test1_read.bin
 diff $idr/test1.bin $idr/test1_read.bin
 
+# Test if writing + reading from a strange location works
+dd if=/dev/urandom of=$idr/test2.bin bs=1 count=10301
+$tbc flashcart writeat any 65427 -i $idr/test2.bin
+$tbc flashcart readat any 65427 10301 -o $idr/test2_read.bin
+diff $idr/test2.bin $idr/test2_read.bin
+$tbc flashcart readat any 0 1031 -o $idr/test2_read1.bin
+diff $idr/test1.bin $idr/test2_read1.bin
+
+# TODO: add the other tests you wrote down
+
 # As a final test (to not leave the arduboy in a bad state), let's
 # write a good flashcart and read it back to check for transparency
 minicart=../testfiles/minicart.bin
