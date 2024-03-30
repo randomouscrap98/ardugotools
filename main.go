@@ -356,7 +356,7 @@ func (c *FlashcartReadCmd) Run() error {
 
 // Flashcart read any command
 type FlashcartReadAtCmd struct {
-	Device           string `arg:"" default:"any" help:"The system device to read from (use 'any' for first)"`
+	Device           string `arg:"" help:"The system device to read from (use 'any' for first)"`
 	Address          int    `arg:"" help:"The byte-level address to read flashcart data from. Negative for 'from end'"`
 	Length           int    `arg:"" help:"The length of data to retrieve"`
 	Outfile          string `type:"path" short:"o"`

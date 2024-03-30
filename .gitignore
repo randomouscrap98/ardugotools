@@ -11,6 +11,7 @@ ardugotools
 *.gif
 *.h
 *.jpg
+testbin
 build/
 dist/
 ignore/
