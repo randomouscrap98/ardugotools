@@ -354,6 +354,52 @@ func (c *FlashcartReadCmd) Run() error {
 	return nil
 }
 
+// Flashcart read any command
+type FlashcartReadAtCmd struct {
+	Device           string `arg:"" default:"any" help:"The system device to read from (use 'any' for first)"`
+	Address          int    `arg:"" help:"The byte-level address to read flashcart data from. Negative for 'from end'"`
+	Length           int    `arg:"" help:"The length of data to retrieve"`
+	Outfile          string `type:"path" short:"o"`
+	OverrideCapacity int    `help:"Force device capacity (NOT RECOMMENDED)"`
+}
+
+func (c *FlashcartReadAtCmd) Run() error {
+	if c.Length == 0 {
+		log.Fatalf("Must provide a non-zero length!")
+	}
+	// Figure out save location
+	if c.Outfile == "" {
+		c.Outfile = fmt.Sprintf("flashchunk_%s.bin", FileSafeDateTime())
+	}
+	file, err := os.Create(c.Outfile)
+	fatalIfErr(c.Outfile, "open file for writing", err)
+	defer file.Close()
+	// Force connect with bootloader
+	sercon, d := connectWithBootloader(c.Device)
+	defer sercon.Close()
+	extdata := mustHaveFlashcart(sercon, d)
+	if c.OverrideCapacity > 0 {
+		extdata.Jedec.Capacity = c.OverrideCapacity
+	}
+	if c.Address < 0 {
+		c.Address = extdata.Jedec.Capacity + c.Address
+	}
+	if c.Address >= extdata.Jedec.Capacity {
+		log.Fatalf("Address too high! Max: %d", extdata.Jedec.Capacity-1)
+	}
+	// Now, we can simply read right into the writer
+	err = arduboy.ReadFlashcartInto(sercon, c.Address, c.Length, file, nil)
+	fatalIfErr(c.Device, "read flashcart", err)
+	log.Printf("Read %d flashcart bytes into %s\n", c.Length, c.Outfile)
+	// Return data about the save
+	result := make(map[string]interface{})
+	result["Filename"] = c.Outfile
+	result["Length"] = c.Length
+	result["Address"] = c.Address
+	PrintJson(result)
+	return nil
+}
+
 // Flashcart write command
 type FlashcartWriteCmd struct {
 	Device           string `arg:"" default:"any" help:"The system device to write to (use 'any' for first)"`
@@ -709,6 +755,7 @@ var cli struct {
 		Read     FlashcartReadCmd     `cmd:"" help:"Read entire flashcart, saved as a .bin file"`
 		Write    FlashcartWriteCmd    `cmd:"" help:"Write full flashcart to arduboy"`
 		Writedev FlashcartWriteDevCmd `cmd:"" help:"Write dev data to the end of arduboy flashcart"`
+		Readat   FlashcartReadAtCmd   `cmd:"" help:"Read some subset of data from anywhere in the flashcart"`
 		// Could analyze flashcart to figure out what device it might be for, and whether
 		// it's technically invalid
 	} `cmd:"" help:"Commands which work directly on flashcarts, whether on device or filesystem"`
