@@ -257,55 +257,56 @@ func spritesheetCodegen(t *testing.T, config *TileConfig) string {
 	return code
 }
 
+func compareCode(config *TileConfig, t *testing.T, trimexpect string) {
+	code := spritesheetCodegen(t, config)
+	trimcode := strings.Trim(code, "\r\n\t ")
+
+	if err := FindStringDiff(trimcode, trimexpect); err != nil {
+		if !config.WindowsFormat {
+			t.Logf("WARN: code differs, trying windows format (err: %s)", err)
+			config.WindowsFormat = true
+			compareCode(config, t, trimexpect)
+		} else {
+			t.Fatalf("Generated code differs:\n%s", err)
+		}
+	}
+}
+
 func TestImageToCode_ArduboyToolset(t *testing.T) {
 	config := TileConfig{
-		Width:         16,
-		Height:        16,
-		UseMask:       true,
-		SeparateMask:  true,
-		WindowsFormat: true,
-		Name:          "MyImage",
+		Width:        16,
+		Height:       16,
+		UseMask:      true,
+		SeparateMask: true,
+		Name:         "MyImage",
 	}
-
-	code := spritesheetCodegen(t, &config)
 
 	// Now compare code to the code to the expected
 	rawfile, err := os.ReadFile(fileTestPath("spritesheet.h"))
 	if err != nil {
 		t.Fatalf("Couldn't load expected file: %s", err)
 	}
-
-	trimcode := strings.Trim(code, "\r\n\t ")
 	trimexpect := strings.Trim(string(rawfile), "\r\n\t ")
 
-	if err := FindStringDiff(trimcode, trimexpect); err != nil {
-		t.Fatalf("Generated code differs:\n%s", err)
-	}
+	compareCode(&config, t, trimexpect)
 }
 
 func TestImageToCode_ArduboyToolset2(t *testing.T) {
 	config := TileConfig{
-		Width:         16,
-		Height:        16,
-		UseMask:       true,
-		SeparateMask:  false,
-		WindowsFormat: true,
-		NoDimensions:  true,
-		Name:          "MyImage",
+		Width:        16,
+		Height:       16,
+		UseMask:      true,
+		SeparateMask: false,
+		NoDimensions: true,
+		Name:         "MyImage",
 	}
-
-	code := spritesheetCodegen(t, &config)
 
 	// Now compare code to the code to the expected
 	rawfile, err := os.ReadFile(fileTestPath("spritesheet2.h"))
 	if err != nil {
 		t.Fatalf("Couldn't load expected file: %s", err)
 	}
-
-	trimcode := strings.Trim(code, "\r\n\t ")
 	trimexpect := strings.Trim(string(rawfile), "\r\n\t ")
 
-	if err := FindStringDiff(trimcode, trimexpect); err != nil {
-		t.Fatalf("Generated code differs:\n%s", err)
-	}
+	compareCode(&config, t, trimexpect)
 }
