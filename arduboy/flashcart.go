@@ -194,6 +194,73 @@ func ReadFlashcart(sercon io.ReadWriter, page uint16, length uint16) ([]byte, er
 	return result, err
 }
 
+// Write any arbitrary amount of data to the flash, perserving any data surrounding
+// it (since writing flashes the entire 65k block). Return the actual page it started
+// writing to, and the total write size
+func WriteFlashcart(sercon io.ReadWriter, address int, data []byte, logProgress bool) (int, int, error) {
+	blockAlignedPage := uint16(address / FXBlockSize * FxPagesPerBlock)
+	backfillLength := uint16(int(blockAlignedPage)*FXPageSize - address) //(page - blockAlignedPage) * uint16(FXPageSize)
+	// Read backfill to get the data block aligned and not accidentally clear pre data
+	if backfillLength > 0 {
+		if logProgress {
+			log.Printf("Reading backfill to preserve block data: %d bytes at page %d", backfillLength, blockAlignedPage)
+		}
+		backfill, err := ReadFlashcart(sercon, blockAlignedPage, backfillLength)
+		if err != nil {
+			return 0, 0, err
+		}
+		// This is apparently performant...
+		data = append(backfill, data...)
+	}
+	overflow := len(data) % FXBlockSize
+	if overflow > 0 {
+		// This is the address of the last byte. This will help tell us where the
+		// block address is
+		lastByte := int(blockAlignedPage)*FXPageSize + len(data) - 1
+		lastBlockPage := lastByte / FXBlockSize * FxPagesPerBlock
+		if logProgress {
+			log.Printf("Reading whole block at page %d for %d byte overflow", blockAlignedPage, overflow)
+		}
+		// I'm being lazy here: it's easier to just read the whole block
+		// and merge the two, since the address can only be set to a page
+		// boundary, but the data could realistically be "any size"
+		lastblock, err := ReadFlashcart(sercon, uint16(lastBlockPage), 0)
+		if err != nil {
+			return 0, 0, err
+		}
+		// Even though we read the whole block, only append the stuff AFTER
+		// the overflow
+		data = append(data, lastblock[overflow:]...)
+	}
+
+	if len(data)%FXBlockSize > 0 {
+		return 0, 0, fmt.Errorf("PROGRAM ERROR: constructed fx data not block sized (%d): %d", FXBlockSize, len(data))
+	}
+
+	blocknum := 0
+	rwep := ReadWriteErrorPass{rw: sercon}
+	onebyte := make([]byte, 1)
+
+	defer ResetRgbButtonState(sercon)
+	for i := 0; i < len(data); i += FXBlockSize {
+		var rgbState uint8 = LEDCtrlBtnOff | uint8(i&0b111)
+		SetRgbButtonState(sercon, rgbState)
+		if logProgress {
+			log.Printf("Writing block# %d at page %d", blocknum, i)
+		}
+		rwep.WritePass(AddressCommandFlashcartPage(blockAlignedPage + uint16(i/FXPageSize)))
+		rwep.ReadPass(onebyte)
+		rwep.WritePass(WriteFlashcartCommand(0)) //Yes, apparently it's 0 for full block
+		rwep.WritePass(data[i : i+FXBlockSize])
+		rwep.ReadPass(onebyte)
+		if rwep.err != nil {
+			return 0, 0, rwep.err
+		}
+	}
+
+	return int(blockAlignedPage), len(data), nil
+}
+
 // Read the entire flashcart slot-by-slot and write it out to the 'output' writer.
 // This is a "smart" reader that scans through slots reading them one by one.
 // This is slightly slower than mindless block reading, but can be overall faster
@@ -455,6 +522,14 @@ ScanFlashcartLoop:
 	return headerCount, nil
 }
 
+// A wrapper for ScanFlashcart which only returns the basic flashcart size in bytes and slots
+func ScanFlashcartSize(sercon io.ReadWriter) (int, int, error) {
+	scanFunc := func(con io.ReadWriter, header *FxHeader, addr int, headers int) error {
+		return nil
+	}
+	return ScanFlashcart(sercon, scanFunc, 64, LEDCtrlBlOn|LEDCtrlRdOn)
+}
+
 type HeaderProgram struct {
 	Title     string
 	Version   string
@@ -487,7 +562,7 @@ func MapHeaderResult(result *[]HeaderCategory, header *FxHeader) (*string, error
 	} else {
 		last := len(*result) - 1
 		if last < 0 {
-			return nil, errors.New("Invalid flashcart: did not start with a category!")
+			return nil, errors.New("invalid flashcart: did not start with a category")
 		}
 		newProgram := &HeaderProgram{
 			Title:     header.Title,

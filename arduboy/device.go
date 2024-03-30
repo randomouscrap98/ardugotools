@@ -99,14 +99,40 @@ var VidPidTable = map[string]BasicBoardInfo{
 
 type JedecInfo struct {
 	ID           string
-	Capacity     int32
+	Capacity     int
 	Manufacturer string
 }
 
 // Whether this jedec info will fit a flashcart of given size. there are
 // caveats to fitting a flashcart (it must end with an empty page and whatever)
-func (j *JedecInfo) FitsFlashcart(size int32) bool {
-	return size+int32(FXPageSize) <= j.Capacity
+func (j *JedecInfo) FitsFlashcart(size int) bool {
+	return size+FXPageSize <= j.Capacity
+}
+
+// Whether the flashcart of fsize could fit fxdata of dsize at the end.
+// Can also specify whether it would fit without block overlap, simplifying
+// the writing process (no reads required)
+func (j *JedecInfo) ValidateFitsFxData(fsize int, dsize int, noBlockOverlap bool) error {
+	rsize := fsize + FXPageSize
+	if noBlockOverlap {
+		// Flashcart ends IN this block
+		endblock := rsize / FXBlockSize
+		// FxData starts IN this block
+		startblock := (j.Capacity - dsize) / FXBlockSize
+		// They only fit if their blocks don't collide. This means that if the
+		// flashcart intrudes only 1 page into the final block, absolutely no
+		// fxdata could be written, even though the fxdata could be far less
+		// than the blocksize (this is the caveat you get with noBlockOverlap)
+		if endblock < startblock {
+			return nil
+		}
+		return fmt.Errorf("fxdata block (%d) overlaps flashcart (%d)", startblock, endblock)
+	} else {
+		if rsize+dsize <= j.Capacity {
+			return nil
+		}
+		return fmt.Errorf("fxdata overlaps: %d + %d > %d", rsize, dsize, j.Capacity)
+	}
 }
 
 type BasicDeviceInfo struct {

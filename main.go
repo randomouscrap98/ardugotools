@@ -369,7 +369,7 @@ func (c *FlashcartWriteCmd) Run() error {
 	extdata := mustHaveFlashcart(sercon, d)
 	if c.OverrideCapacity > 0 {
 		// Spooky user desires
-		extdata.Jedec.Capacity = int32(c.OverrideCapacity)
+		extdata.Jedec.Capacity = c.OverrideCapacity
 	}
 	// Figure out save location, open file
 	file, err := os.Open(c.Infile)
@@ -377,7 +377,7 @@ func (c *FlashcartWriteCmd) Run() error {
 	defer file.Close()
 	fi, err := file.Stat()
 	fatalIfErr(c.Infile, "check file", err)
-	fileSize := int32(fi.Size())
+	fileSize := int(fi.Size())
 	if !extdata.Jedec.FitsFlashcart(fileSize) {
 		log.Fatalf("Flashcart too big for device! Size: %d, capacity: %d\n",
 			fileSize, extdata.Jedec.Capacity)
@@ -394,6 +394,60 @@ func (c *FlashcartWriteCmd) Run() error {
 	result["Written"] = blocks * arduboy.FXBlockSize
 	result["Capacity"] = extdata.Jedec.Capacity
 	result["Verified"] = !c.Noverify
+	PrintJson(result)
+	return nil
+}
+
+// Flashcart write command
+type FlashcartWriteDevCmd struct {
+	Device           string `arg:"" default:"any" help:"The system device to write to (use 'any' for first)"`
+	Infile           string `type:"existingfile" default:"fxdata.bin" short:"i"`
+	OverrideCapacity int    `help:"Force device capacity (NOT RECOMMENDED)"`
+	NoCheck          bool   `help:"Don't validate fxdata size (NOT RECOMMENDED)"`
+}
+
+func (c *FlashcartWriteDevCmd) Run() error {
+	// Open arduboy, force flashcart existence
+	sercon, d := connectWithBootloader(c.Device)
+	defer sercon.Close()
+	extdata := mustHaveFlashcart(sercon, d)
+	if c.OverrideCapacity > 0 {
+		// Spooky user desires
+		extdata.Jedec.Capacity = c.OverrideCapacity
+	}
+	// Some file checks to start with, and open the file
+	file, err := os.Open(c.Infile)
+	fatalIfErr(c.Infile, "open file for reading", err)
+	defer file.Close()
+	fi, err := file.Stat()
+	fatalIfErr(c.Infile, "check file", err)
+	fileSize := int(fi.Size())
+	if !c.NoCheck && fileSize%arduboy.FXPageSize > 0 {
+		log.Fatalf("VALIDATION FAIL: Fxdata not page aligned! Pagesize: %d, Filesize: %d",
+			arduboy.FXPageSize, fileSize)
+	}
+	// Just read the whole file (the functions we have expect the whole byte array)
+	fxdata, err := io.ReadAll(file)
+	fatalIfErr(c.Infile, "read file", err)
+	flashcartSize, _, err := arduboy.ScanFlashcartSize(sercon)
+	fatalIfErr(c.Device, "get flashcart size", err)
+	if err := extdata.Jedec.ValidateFitsFxData(flashcartSize, fileSize, true); err != nil {
+		log.Fatalf("%s - Capacity: %d, Flashcart: %d, FxData: %d\n",
+			err, extdata.Jedec.Capacity, flashcartSize, fileSize)
+	}
+	address := extdata.Jedec.Capacity - len(fxdata)
+	realPage, realLength, err := arduboy.WriteFlashcart(sercon, address, fxdata, true)
+	fatalIfErr(c.Device, "write flash data", err)
+	log.Printf("Finished writing %d bytes to flashcart at page %d\n", realLength, realPage)
+	// Return data about the write
+	result := make(map[string]interface{})
+	result["Filename"] = c.Infile
+	result["DataLength"] = fileSize
+	result["DataStartAddress"] = address
+	result["Capacity"] = extdata.Jedec.Capacity
+	result["FlashcartLength"] = flashcartSize
+	result["DataWritePage"] = realPage
+	result["DataWriteLength"] = realLength
 	PrintJson(result)
 	return nil
 }
@@ -651,9 +705,10 @@ var cli struct {
 		Delete EepromDeleteCmd `cmd:"" help:"Reset entire eeprom"`
 	} `cmd:"" help:"Commands which work directly on eeprom, whether on device or filesystem"`
 	Flashcart struct {
-		Scan  FlashcartScanCmd  `cmd:"" help:"Scan flashcart and return categories/games (works on files too)"`
-		Read  FlashcartReadCmd  `cmd:"" help:"Read entire flashcart, saved as a .bin file"`
-		Write FlashcartWriteCmd `cmd:"" help:"Write full flashcart to arduboy"`
+		Scan     FlashcartScanCmd     `cmd:"" help:"Scan flashcart and return categories/games (works on files too)"`
+		Read     FlashcartReadCmd     `cmd:"" help:"Read entire flashcart, saved as a .bin file"`
+		Write    FlashcartWriteCmd    `cmd:"" help:"Write full flashcart to arduboy"`
+		Writedev FlashcartWriteDevCmd `cmd:"" help:"Write dev data to the end of arduboy flashcart"`
 		// Could analyze flashcart to figure out what device it might be for, and whether
 		// it's technically invalid
 	} `cmd:"" help:"Commands which work directly on flashcarts, whether on device or filesystem"`
