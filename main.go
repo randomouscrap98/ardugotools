@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	AppVersion = "0.3.0"
+	AppVersion = "0.4.0"
 )
 
 // Quick way to fail on error, since most commands are "doing" something on
@@ -518,7 +518,8 @@ type FlashcartWriteDevCmd struct {
 	Device           string `arg:"" default:"any" help:"The system device to write to (use 'any' for first)"`
 	Infile           string `type:"existingfile" default:"fxdata.bin" short:"i"`
 	OverrideCapacity int    `help:"Force device capacity (NOT RECOMMENDED)"`
-	NoCheck          bool   `help:"Don't validate fxdata size (NOT RECOMMENDED)"`
+	NoAlignCheck     bool   `help:"Don't validate fxdata size (NOT RECOMMENDED)"`
+	NoOverwriteCheck bool   `help:"Don't check if fx dev data overwrites flashcart (NOT RECOMMENDED)"`
 }
 
 func (c *FlashcartWriteDevCmd) Run() error {
@@ -534,18 +535,21 @@ func (c *FlashcartWriteDevCmd) Run() error {
 	file, fi := forceOpen(c.Infile)
 	defer file.Close()
 	fileSize := int(fi.Size())
-	if !c.NoCheck && fileSize%arduboy.FXPageSize > 0 {
+	if !c.NoAlignCheck && fileSize%arduboy.FXPageSize > 0 {
 		log.Fatalf("VALIDATION FAIL: Fxdata not page aligned! Pagesize: %d, Filesize: %d",
 			arduboy.FXPageSize, fileSize)
 	}
 	// Just read the whole file (the functions we have expect the whole byte array)
 	fxdata, err := io.ReadAll(file)
 	fatalIfErr(c.Infile, "read file", err)
-	flashcartSize, _, err := arduboy.ScanFlashcartSize(sercon)
-	fatalIfErr(c.Device, "get flashcart size", err)
-	if err := extdata.Jedec.ValidateFitsFxData(flashcartSize, fileSize, true); err != nil {
-		log.Fatalf("%s - Capacity: %d, Flashcart: %d, FxData: %d\n",
-			err, extdata.Jedec.Capacity, flashcartSize, fileSize)
+	var flashcartSize int
+	if !c.NoOverwriteCheck {
+		flashcartSize, _, err = arduboy.ScanFlashcartSize(sercon)
+		fatalIfErr(c.Device, "get flashcart size", err)
+		if err := extdata.Jedec.ValidateFitsFxData(flashcartSize, fileSize, false); err != nil {
+			log.Fatalf("%s - Capacity: %d, Flashcart: %d, FxData: %d\n",
+				err, extdata.Jedec.Capacity, flashcartSize, fileSize)
+		}
 	}
 	address := extdata.Jedec.Capacity - len(fxdata)
 	arduboy.SetRgbButtonState(sercon, arduboy.LEDCtrlGrOn|arduboy.LEDCtrlRdOn)
@@ -561,7 +565,9 @@ func (c *FlashcartWriteDevCmd) Run() error {
 	result["DataWriteAddress"] = realAddress
 	result["DataWriteLength"] = realLength
 	result["Capacity"] = extdata.Jedec.Capacity
-	result["FlashcartLength"] = flashcartSize
+	if !c.NoOverwriteCheck {
+		result["FlashcartLength"] = flashcartSize
+	}
 	PrintJson(result)
 	return nil
 }

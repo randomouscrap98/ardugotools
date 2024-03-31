@@ -33,6 +33,18 @@ mv ../$tb .
 # Start running some tests. You MUST have an arduboy connected!
 $tbc device scan | jq -e 'type=="array" and length==1'
 
+# Test eeprom read/write
+dd if=/dev/urandom of=$idr/testeeprom.bin bs=1 count=1024
+$tbc eeprom write any -i $idr/testeeprom.bin
+$tbc eeprom read any -o $idr/testeeprom_read.bin
+diff $idr/testeeprom.bin $idr/testeeprom_read.bin
+
+# test eeprom Delete
+dd if=/dev/zero bs=1024 count=1 | tr "\0" "\377" >$idr/testeeprom_empty.bin
+$tbc eeprom delete any
+$tbc eeprom read any -o $idr/testeeprom_empty_read.bin
+diff $idr/testeeprom_empty.bin $idr/testeeprom_empty_read.bin
+
 # Test if writing + reading from 0 works
 dd if=/dev/urandom of=$idr/test1.bin bs=1 count=1031
 $tbc flashcart writeat any 0 -i $idr/test1.bin
