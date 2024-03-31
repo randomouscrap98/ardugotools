@@ -45,6 +45,18 @@ $tbc eeprom delete any
 $tbc eeprom read any -o $idr/testeeprom_empty_read.bin
 diff $idr/testeeprom_empty.bin $idr/testeeprom_empty_read.bin
 
+# Test sketch bin2hex + write to device
+dd if=/dev/urandom of=$idr/testsketch.bin bs=1024 count=20
+$tbc sketch bin2hex -i $idr/testsketch.bin -o $idr/testsketch.hex
+$tbc sketch write any -i $idr/testsketch.hex
+$tbc sketch read any -o $idr/testsketch_read.hex
+diff $idr/testsketch.hex $idr/testsketch_read.hex
+$tbc sketch hex2bin -i $idr/testsketch_read.hex -o $idr/testsketch_read.bin
+diff $idr/testsketch.bin $idr/testsketch_read.bin
+
+# Now just write a known good hex to the device for safety
+$tbc sketch write any -i ../testfiles/qr-generator.hex
+
 # Test if writing + reading from 0 works
 dd if=/dev/urandom of=$idr/test1.bin bs=1 count=1031
 $tbc flashcart writeat any 0 -i $idr/test1.bin

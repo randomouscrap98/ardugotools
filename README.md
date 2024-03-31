@@ -1,6 +1,6 @@
 # Ardugotools
 
-A simple, single-file CLI toolset for Arduboy. Runs on many systems
+A simple, single-binary CLI toolset for Arduboy. Runs on many systems
 
 ## Features
 
