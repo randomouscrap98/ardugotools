@@ -2,7 +2,7 @@ package arduboy
 
 import (
 	"bytes"
-	"fmt"
+	//"fmt"
 	//"os"
 	"testing"
 )
@@ -19,10 +19,31 @@ func TestParseFxData_FromFiles(t *testing.T) {
 		Data:   fileTestPath("spritesheet.png"),
 		Format: "image",
 		Image: &FxDataImageConfig{
-			Width:  16,
-			Height: 16,
+			Width:   16,
+			Height:  16,
+			UseMask: true,
 		},
 	}
+
+	// And add some hex. this should be 17 bytes
+	config.Data["myhex"] = &FxDataField{
+		Data:   "000102030405060708090A0B0C0D0E0F10",
+		Format: "hex",
+	}
+
+	// And some base64 of "Hello world!". 12 bytes (no null terminator)
+	config.Data["mybase64"] = &FxDataField{
+		Data:   "SGVsbG8gd29ybGQh",
+		Format: "base64",
+	}
+
+	// And finally an ACTUAL string. 44 bytes + 1 (null terminator)
+	config.Data["mystring"] = &FxDataField{
+		Data:   "owo uwu !@#$%^&*()-_[]{}|\\;:'\"?/.><,+=`~Z188",
+		Format: "string",
+	}
+
+	// Total bytes are 1028 + 17 + 12 + 45 = 1102
 
 	// And add some raw data as initial save.
 	config.Save["uneven"] = &FxDataField{
@@ -42,15 +63,26 @@ func TestParseFxData_FromFiles(t *testing.T) {
 
 	// This is the exact length of the uneven.bin (perhaps programmatically read this?)
 	if offsets.SaveLength != 1031 {
-		t.Fatalf("Expeted savelength 1031, got %d", offsets.SaveLength)
+		t.Fatalf("Expected savelength 1031, got %d", offsets.SaveLength)
 	}
 	if offsets.SaveLengthFlash != FxSaveAlignment {
-		t.Fatalf("Expeted flash savelength %d, got %d", FxSaveAlignment, offsets.SaveLengthFlash)
+		t.Fatalf("Expected flash savelength %d, got %d", FxSaveAlignment, offsets.SaveLengthFlash)
 	}
 	expectedSaveLoc := FxDevExpectedFlashCapacity - FxSaveAlignment
 	if offsets.SaveStart != expectedSaveLoc {
-		t.Fatalf("Expeted save location %d, got %d", expectedSaveLoc, offsets.SaveStart)
+		t.Fatalf("Expected save location %d, got %d", expectedSaveLoc, offsets.SaveStart)
 	}
 
-	fmt.Printf("Header:\n%s", string(header.Bytes()))
+	if offsets.DataLength != 1102 {
+		t.Fatalf("Expected datalength 1102, got %d", offsets.DataLength)
+	}
+	if offsets.DataLengthFlash != 1024+FXPageSize {
+		t.Fatalf("Expected flash datalength %d, got %d", 1024+FXPageSize, offsets.DataLengthFlash)
+	}
+	expectedDataLoc := offsets.SaveStart - offsets.DataLengthFlash
+	if offsets.DataStart != expectedDataLoc {
+		t.Fatalf("Expected data location %d, got %d", expectedDataLoc, offsets.DataStart)
+	}
+
+	//fmt.Printf("Header:\n%s", string(header.Bytes()))
 }

@@ -4,6 +4,8 @@ package arduboy
 // comes from, it should only be given the already-parsed data. As such,
 // DON'T include things like the toml or json libararies!
 import (
+	"encoding/base64"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
@@ -85,7 +87,7 @@ func ParseFxField(name string, field *FxDataField, header io.Writer, data io.Wri
 		if err != nil {
 			return 0, err
 		}
-		log.Printf("Copied raw file %s to fxdata (%d bytes)\n", field.Data, copylen)
+		log.Printf("%s: Copied raw file %s to fxdata (%d bytes)\n", name, field.Data, copylen)
 		truelength = int(copylen)
 	case "image":
 		// Image is a bit more special: it needs to have a lot done to it, but
@@ -110,6 +112,16 @@ func ParseFxField(name string, field *FxDataField, header io.Writer, data io.Wri
 		if len(tiles) > 1 {
 			io.WriteString(header, MakeFxHeaderField("uint8_t", name+"Frames", len(tiles), 0))
 		}
+		// Need to write the width and height as 2 byte fields
+		preamble := make([]byte, 4)
+		Write2ByteValue(uint16(computed.SpriteWidth), preamble, 0)
+		Write2ByteValue(uint16(computed.SpriteHeight), preamble, 2)
+		_, err = data.Write(preamble)
+		if err != nil {
+			return 0, err
+		}
+		truelength += 4
+		// Now write all the tiles
 		for _, tile := range tiles {
 			ptile, w, h := ImageToPaletted(tile, field.Image.Threshold, field.Image.AlphaThreshold)
 			raw, mask, err := PalettedToRaw(ptile, w, h)
@@ -129,8 +141,40 @@ func ParseFxField(name string, field *FxDataField, header io.Writer, data io.Wri
 				}
 			}
 		}
-		log.Printf("Copied image %s to fxdata (%d tiles)\n", field.Data, len(tiles))
-
+		log.Printf("%s: Copied image %s to fxdata (%d tiles)\n", name, field.Data, len(tiles))
+	case "hex":
+		sreader := strings.NewReader(field.Data)
+		decoder := hex.NewDecoder(sreader)
+		num, err := io.Copy(data, decoder)
+		if err != nil {
+			return 0, err
+		}
+		truelength += int(num)
+		log.Printf("%s: Copied raw hex to fxdata (%d bytes)\n", name, truelength)
+	case "base64":
+		sreader := strings.NewReader(field.Data)
+		decoder := base64.NewDecoder(base64.StdEncoding, sreader)
+		num, err := io.Copy(data, decoder)
+		if err != nil {
+			return 0, err
+		}
+		truelength += int(num)
+		log.Printf("%s: Copied base64 to fxdata (%d bytes)\n", name, truelength)
+	case "string":
+		sreader := strings.NewReader(field.Data)
+		// Copy literal values
+		num, err := io.Copy(data, sreader)
+		if err != nil {
+			return 0, err
+		}
+		// Also need to write the null terminator
+		onebyte[0] = 0
+		_, err = data.Write(onebyte)
+		if err != nil {
+			return 0, err
+		}
+		truelength += int(num) + 1
+		log.Printf("%s: Copied string to fxdata (%d bytes)\n", name, truelength)
 	default:
 		return 0, fmt.Errorf("Unknown format type %s", field.Format)
 	}
