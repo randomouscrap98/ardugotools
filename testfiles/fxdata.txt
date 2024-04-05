@@ -1,0 +1,6 @@
+
+image_t spritesheet = "spritesheet.png"
+
+savesection
+
+raw_t uneven = "uneven.bin"

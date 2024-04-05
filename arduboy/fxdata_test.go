@@ -2,23 +2,10 @@ package arduboy
 
 import (
 	"bytes"
-	"os"
+	"fmt"
+	//"os"
 	"testing"
 )
-
-
-func newFxDataOutput(folder string) (os.File, error) {
-  // Just use file backing because ugh
-  os.MkdirAll(folder, os.ModePerm)
-
-
-	output := FxDataOutput{
-		Header: hbuf,
-		Data:   dbuf,
-		Save:   sbuf,
-		Dev:    devbuf,
-	}
-}
 
 func TestParseFxData_FromFiles(t *testing.T) {
 	// Create a basic configuration
@@ -31,7 +18,10 @@ func TestParseFxData_FromFiles(t *testing.T) {
 	config.Data["spritesheet"] = &FxDataField{
 		Data:   fileTestPath("spritesheet.png"),
 		Format: "image",
-		Image:  &FxDataImageConfig{},
+		Image: &FxDataImageConfig{
+			Width:  16,
+			Height: 16,
+		},
 	}
 
 	// And add some raw data as initial save.
@@ -40,17 +30,27 @@ func TestParseFxData_FromFiles(t *testing.T) {
 		Format: "file",
 	}
 
-	// Make a bunch of buffers to hold the data
-	hbuf := bytes.//NewBuffer(nil)
-	dbuf := bytes.NewBuffer(nil)
-	sbuf := bytes.NewBuffer(nil)
-	devbuf := bytes.NewBuffer(nil)
+	// Make some buffers to hold the data
+	var header bytes.Buffer
+	var bin bytes.Buffer
 
-	output := FxDataOutput{
-		Header: hbuf,
-		Data:   dbuf,
-		Save:   sbuf,
-		Dev:    devbuf,
+	// Call the function
+	offsets, err := ParseFxData(&config, &header, &bin)
+	if err != nil {
+		t.Fatalf("Error returned from ParseFxData: %s", err)
 	}
 
+	// This is the exact length of the uneven.bin (perhaps programmatically read this?)
+	if offsets.SaveLength != 1031 {
+		t.Fatalf("Expeted savelength 1031, got %d", offsets.SaveLength)
+	}
+	if offsets.SaveLengthFlash != FxSaveAlignment {
+		t.Fatalf("Expeted flash savelength %d, got %d", FxSaveAlignment, offsets.SaveLengthFlash)
+	}
+	expectedSaveLoc := FxDevExpectedFlashCapacity - FxSaveAlignment
+	if offsets.SaveStart != expectedSaveLoc {
+		t.Fatalf("Expeted save location %d, got %d", expectedSaveLoc, offsets.SaveStart)
+	}
+
+	fmt.Printf("Header:\n%s", string(header.Bytes()))
 }

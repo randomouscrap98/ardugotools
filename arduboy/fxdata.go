@@ -12,7 +12,7 @@ import (
 )
 
 const (
-	FxDevExpectedFlashCapacity = 2 ^ 24
+	FxDevExpectedFlashCapacity = 1 << 24
 )
 
 type FxDataImageConfig struct {
@@ -66,6 +66,9 @@ type FxData struct {
 // within the data writer
 func ParseFxField(name string, field *FxDataField, header io.Writer, data io.Writer,
 	position int) (int, error) {
+	if field == nil {
+		return 0, fmt.Errorf("passed null 'field' in ParseFxField: %s", name)
+	}
 	truelength := 0
 	onebyte := make([]byte, 1)
 	// Preemptively write the header field now, and later we'll write some other junk
@@ -118,10 +121,10 @@ func ParseFxField(name string, field *FxDataField, header io.Writer, data io.Wri
 				truelength += len(mask)
 			}
 			for i := range raw {
-				onebyte[i] = raw[i]
+				onebyte[0] = raw[i]
 				data.Write(onebyte)
 				if field.Image.UseMask {
-					onebyte[i] = mask[i]
+					onebyte[0] = mask[i]
 					data.Write(onebyte)
 				}
 			}
@@ -152,7 +155,7 @@ func MakeFxHeaderAddress(name string, addr int) string {
 // or FX_SAVE_PAGE
 func MakeFxHeaderMainPointer(name string, addr uint, length uint) string {
 	return fmt.Sprintf("%s%s\n",
-		MakeFxHeaderField("uint16_t", name+"_PAGE", int(addr), 4),
+		MakeFxHeaderField("uint16_t", name+"_PAGE", int(addr)/FXPageSize, 4),
 		MakeFxHeaderField("uint24_t", name+"_BYTES", int(length), 0))
 }
 
@@ -200,7 +203,7 @@ func ParseFxData(data *FxData, header io.Writer, bin io.Writer) (*FxOffsets, err
 
 	io.WriteString(header, "\n// Save fields (offsets into save section)\n")
 	for key := range data.Save {
-		savepos, err = ParseFxField(key, data.Data[key], header, bin, savepos)
+		savepos, err = ParseFxField(key, data.Save[key], header, bin, savepos)
 		if err != nil {
 			return nil, err
 		}
@@ -229,7 +232,7 @@ func ParseFxData(data *FxData, header io.Writer, bin io.Writer) (*FxOffsets, err
 		io.WriteString(header, MakeFxHeaderMainPointer("FX_SAVE", uint(result.SaveStart), uint(result.SaveLength)))
 	}
 
-	io.WriteString(header, "\n// Helper macro to initialize fx, call in setup()\n")
+	io.WriteString(header, "// Helper macro to initialize fx, call in setup()\n")
 	if result.SaveLength > 0 {
 		io.WriteString(header, "#define FX_INIT() FX::begin(FX_DATA_PAGE, FX_DATA_SAVE)\n")
 	} else {
