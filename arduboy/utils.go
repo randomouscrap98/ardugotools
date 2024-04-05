@@ -170,6 +170,17 @@ func Write2ByteValue(value uint16, data []byte, index int) {
 	data[index+1] = byte(value & 0xFF)
 }
 
+// Align given address (or length) so it is the smallest
+// multiple of alignment which can contain it. The number
+// is always >= given
+func AlignWidth(width uint, alignment uint) uint {
+	result := (width / alignment) * alignment
+	if width%alignment > 0 {
+		result += alignment
+	}
+	return result
+}
+
 // Parse as many null-terminated strings as possible out of
 // the data. Useful for the header "metadata"
 func ParseStringArray(data []byte) []string {
