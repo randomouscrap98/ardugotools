@@ -2,8 +2,8 @@ package arduboy
 
 import (
 	"bytes"
-	//"fmt"
-	//"os"
+	"fmt"
+	"os"
 	"testing"
 )
 
@@ -19,8 +19,10 @@ func TestParseFxData_FromFiles(t *testing.T) {
 		Data:   fileTestPath("spritesheet.png"),
 		Format: "image",
 		Image: &FxDataImageConfig{
-			Width:   16,
-			Height:  16,
+			// NOTE: unfortunately, can't use width and height, because original
+			// fxdata requires special filenames (blegh)
+			//Width:   16,
+			//Height:  16,
 			UseMask: true,
 		},
 	}
@@ -37,13 +39,15 @@ func TestParseFxData_FromFiles(t *testing.T) {
 		Format: "base64",
 	}
 
-	// And finally an ACTUAL string. 44 bytes + 1 (null terminator)
+	// And finally an ACTUAL string. 41 bytes + 1 (null terminator)
 	config.Data["mystring"] = &FxDataField{
-		Data:   "owo uwu !@#$%^&*()-_[]{}|\\;:'\"?/.><,+=`~Z188",
+		// NOTE: I wanted to use ' and " and \ in the test, but the python fxdata parser
+		// doesn't work with those...
+		Data:   "owo uwu !@#$%^&*()-_[]{}|;:?/.><,+=`~Z188",
 		Format: "string",
 	}
 
-	// Total bytes are 1028 + 17 + 12 + 45 = 1102
+	// Total bytes are 1028 + 17 + 12 + 42 = 1099
 
 	// And add some raw data as initial save.
 	config.Save["uneven"] = &FxDataField{
@@ -73,8 +77,8 @@ func TestParseFxData_FromFiles(t *testing.T) {
 		t.Fatalf("Expected save location %d, got %d", expectedSaveLoc, offsets.SaveStart)
 	}
 
-	if offsets.DataLength != 1102 {
-		t.Fatalf("Expected datalength 1102, got %d", offsets.DataLength)
+	if offsets.DataLength != 1099 {
+		t.Fatalf("Expected datalength 1099, got %d", offsets.DataLength)
 	}
 	if offsets.DataLengthFlash != 1024+FXPageSize {
 		t.Fatalf("Expected flash datalength %d, got %d", 1024+FXPageSize, offsets.DataLengthFlash)
@@ -84,5 +88,23 @@ func TestParseFxData_FromFiles(t *testing.T) {
 		t.Fatalf("Expected data location %d, got %d", expectedDataLoc, offsets.DataStart)
 	}
 
-	//fmt.Printf("Header:\n%s", string(header.Bytes()))
+	// now we compare the fx data generated against a known good fxdata for the same
+	// set of... well, data.
+	fxoldgen, err := os.ReadFile(fileTestPath("fxdata.bin"))
+	if err != nil {
+		t.Fatalf("Couldn't read old fxdata: %s", err)
+	}
+
+	bbin := bin.Bytes()
+	if !bytes.Equal(fxoldgen, bbin) {
+		difpos := 0
+		for difpos = range min(len(fxoldgen), len(bbin)) {
+			if fxoldgen[difpos] != bbin[difpos] {
+				break
+			}
+		}
+		t.Fatalf("Generated fxdata not the same at index %d! old length %d vs new %d", difpos, len(fxoldgen), len(bbin))
+	}
+
+	fmt.Printf("Header:\n%s", string(header.Bytes()))
 }

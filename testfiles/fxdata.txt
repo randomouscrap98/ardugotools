@@ -1,5 +1,8 @@
 
 image_t spritesheet = "spritesheet.png"
+uint8_t myhex = { 0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 }
+uint8_t mybase64 = { 72, 101, 108, 108, 111, 32, 119, 111, 114, 108, 100, 33 }
+string mystring = "owo uwu !@#$%^&*()-_[]{}|;:?/.><,+=`~Z188"
 
 savesection
 
