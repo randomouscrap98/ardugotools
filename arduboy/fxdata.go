@@ -44,9 +44,6 @@ type FxDataField struct {
 }
 
 func (d *FxDataField) ReasonableDefaults() {
-	// if d.Type == "" {
-	// 	d.Type = "uint8_t"
-	// }
 	if d.Format == "" {
 		d.Format = "file"
 	}
@@ -63,23 +60,16 @@ type FxData struct {
 	Save map[string]*FxDataField
 }
 
-type FxDataOutput struct {
-	Header io.Writer
-	Data   io.ReadWriteSeeker
-	Save   io.ReadWriteSeeker
-	Dev    io.Writer
-}
-
 // Parse a single FX field, regardless of where it's supposed to go, and
 // output the results to both the header and the data writer. Accepts the
 // "current location" within the data writer, and should return the updated position
 // within the data writer
-func ParseFxField(name string, field *FxDataField, header *strings.Builder, data io.Writer,
+func ParseFxField(name string, field *FxDataField, header io.Writer, data io.Writer,
 	position int) (int, error) {
 	truelength := 0
 	onebyte := make([]byte, 1)
 	// Preemptively write the header field now, and later we'll write some other junk
-	header.WriteString(MakeFxHeaderAddress(name, position))
+	io.WriteString(header, MakeFxHeaderAddress(name, position))
 	switch strings.ToLower(field.Format) {
 	case "file":
 		// File is always raw: copy it directly to the output
@@ -112,10 +102,10 @@ func ParseFxField(name string, field *FxDataField, header *strings.Builder, data
 		if err != nil {
 			return 0, err
 		}
-		header.WriteString(MakeFxHeaderField("uint16_t", name+"Width", computed.SpriteWidth, 0))
-		header.WriteString(MakeFxHeaderField("uint16_t", name+"Height", computed.SpriteHeight, 0))
+		io.WriteString(header, MakeFxHeaderField("uint16_t", name+"Width", computed.SpriteWidth, 0))
+		io.WriteString(header, MakeFxHeaderField("uint16_t", name+"Height", computed.SpriteHeight, 0))
 		if len(tiles) > 1 {
-			header.WriteString(MakeFxHeaderField("uint8_t", name+"Frames", len(tiles), 0))
+			io.WriteString(header, MakeFxHeaderField("uint8_t", name+"Frames", len(tiles), 0))
 		}
 		for _, tile := range tiles {
 			ptile, w, h := ImageToPaletted(tile, field.Image.Threshold, field.Image.AlphaThreshold)
@@ -141,14 +131,6 @@ func ParseFxField(name string, field *FxDataField, header *strings.Builder, data
 	default:
 		return 0, fmt.Errorf("Unknown format type %s", field.Format)
 	}
-	// typ := field.Type
-	// format := field.Format
-	// if format == "" {
-	//   format =
-	// }
-	// if typ == "" {
-	//   typ = "uint8_t"
-	// }
 	return truelength + position, nil
 }
 
@@ -171,10 +153,16 @@ func MakeFxHeaderAddress(name string, addr int) string {
 func MakeFxHeaderMainPointer(name string, addr uint, length uint) string {
 	return fmt.Sprintf("%s%s\n",
 		MakeFxHeaderField("uint16_t", name+"_PAGE", int(addr), 4),
-		MakeFxHeaderField("uint24_t", name+"_BYTES", int(addr), 0))
-	// return fmt.Sprintf(
-	// 	"constexpr uint16_t %s_PAGE = 0x%04X\nconstexpr uint24_t %s_BYTES = %d\n\n",
-	// 	name, addr/uint(FXPageSize), name, length)
+		MakeFxHeaderField("uint24_t", name+"_BYTES", int(length), 0))
+}
+
+type FxOffsets struct {
+	DataLength      int // real length of data as user defined it
+	SaveLength      int // real length of save as user defined it
+	DataLengthFlash int // length of data on flash (may be larger than DataLength)
+	SaveLengthFlash int // length of save on flash (may be larger than SaveLength)
+	DataStart       int // Beginning address (byte) of data
+	SaveStart       int // Beginning address (byte) of save (will be past end of flash if no save)
 }
 
 // Parse the whole fx data and produce the header and all the little
@@ -183,74 +171,70 @@ func MakeFxHeaderMainPointer(name string, addr uint, length uint) string {
 // Returns the error and the length of data and save
 // NOTE: THIS MUST BE USED ON A 16MB FLASH, due to how the FX libary
 // works! I'm sorry!
-func ParseFxData(data *FxData, output *FxDataOutput) (int, int, error) {
+func ParseFxData(data *FxData, header io.Writer, bin io.Writer) (*FxOffsets, error) {
 	savepos := 0
 	datapos := 0
-	// Even though we don't really want the data to all reside in memory at
-	// once, it's just easier if we put the header into a string builder.
-	var sb strings.Builder
+	result := FxOffsets{}
 	var err error
+
+	io.WriteString(header, "#pragma once\n\nusing uint24_t = __uint24;\n\n")
+
+	io.WriteString(header, "// Data fields (offsets into data section)\n")
 	for key := range data.Data {
-		datapos, err = ParseFxField(key, data.Data[key], &sb, output.Data, datapos)
+		datapos, err = ParseFxField(key, data.Data[key], header, bin, datapos)
 		if err != nil {
-			return 0, 0, err
+			return nil, err
 		}
 	}
+
+	// Gotta pad the data (if it exists...)
+	result.DataLength = datapos
+	result.DataLengthFlash = int(AlignWidth(uint(result.DataLength), uint(FXPageSize)))
+	if result.DataLength > 0 {
+		pad, err := bin.Write(MakePadding(result.DataLengthFlash - result.DataLength))
+		if err != nil {
+			return nil, err
+		}
+		log.Printf("Data padding is %d bytes\n", pad)
+	}
+
+	io.WriteString(header, "\n// Save fields (offsets into save section)\n")
 	for key := range data.Save {
-		savepos, err = ParseFxField(key, data.Data[key], &sb, output.Save, savepos)
+		savepos, err = ParseFxField(key, data.Data[key], header, bin, savepos)
 		if err != nil {
-			return 0, 0, err
+			return nil, err
 		}
 	}
 
-	// Only at the end can we write everything to the header. Here, we know
-	// the fx data and save size, and can output the proper thingies
-	io.WriteString(output.Header, "#pragma once\n\nusing uint24_t = __uint24;\n\n")
-
-	savelength := uint(savepos)
-	datalength := uint(savepos)
-	savelengthFlash := AlignWidth(savelength, FxSaveAlignment)
-	datalengthFlash := AlignWidth(datalength, uint(FXPageSize))
-	saveStart := FxDevExpectedFlashCapacity - savelengthFlash
-	dataStart := saveStart - datalengthFlash
-
-	// Write the padding; the files need to be pre-padded
-	pad, err := output.Data.Write(MakePadding(int(datalengthFlash - datalength)))
-	if err != nil {
-		return 0, 0, err
-	}
-	log.Printf("Data padding is %d bytes\n", pad)
-	if savelength > 0 {
-		pad, err := output.Save.Write(MakePadding(int(savelengthFlash - savelength)))
+	// Gotta pad the save (if it exists...)
+	result.SaveLength = savepos
+	result.SaveLengthFlash = int(AlignWidth(uint(result.SaveLength), FxSaveAlignment))
+	if result.SaveLength > 0 {
+		pad, err := bin.Write(MakePadding(result.SaveLengthFlash - result.SaveLength))
 		if err != nil {
-			return 0, 0, err
+			return nil, err
 		}
 		log.Printf("Save padding is %d bytes\n", pad)
 	}
 
-	// Dump the data into the dev data; alignment is already there
-	output.Data.Seek(0, io.SeekStart)
-	_, err = io.Copy(output.Dev, output.Data)
-	if err != nil {
-		return 0, 0, err
+	// Figure out the positions
+	result.SaveStart = FxDevExpectedFlashCapacity - result.SaveLengthFlash
+	result.DataStart = result.SaveStart - result.DataLengthFlash
+
+	// Write the positions (these usually go on top in the original fxdata.h, but
+	// in ours, we write it at the bottom. Hopefully not much of a problem...)
+	io.WriteString(header, "\n// FX addresses (only really used for initialization)\n")
+	io.WriteString(header, MakeFxHeaderMainPointer("FX_DATA", uint(result.DataStart), uint(result.DataLength)))
+	if result.SaveLength > 0 {
+		io.WriteString(header, MakeFxHeaderMainPointer("FX_SAVE", uint(result.SaveStart), uint(result.SaveLength)))
 	}
 
-	// Can always write the fx data stuff
-	io.WriteString(output.Header, MakeFxHeaderMainPointer("FX_DATA", dataStart, datalength))
-
-	// Apparently can't always write the save (though it really should be safe...)
-	if savelength > 0 {
-		// Dump save into the dev data; alignment is already there
-		output.Save.Seek(0, io.SeekStart)
-		_, err = io.Copy(output.Dev, output.Save)
-		if err != nil {
-			return 0, 0, err
-		}
-		io.WriteString(output.Header, MakeFxHeaderMainPointer("FX_SAVE", saveStart, savelength))
+	io.WriteString(header, "\n// Helper macro to initialize fx, call in setup()\n")
+	if result.SaveLength > 0 {
+		io.WriteString(header, "#define FX_INIT() FX::begin(FX_DATA_PAGE, FX_DATA_SAVE)\n")
+	} else {
+		io.WriteString(header, "#define FX_INIT() FX::begin(FX_DATA_PAGE)\n")
 	}
 
-	// Finally, put the header into the actual place rather than in-memory
-	io.WriteString(output.Header, sb.String())
-
-	return int(datalength), int(savelength), nil
+	return &result, nil
 }
