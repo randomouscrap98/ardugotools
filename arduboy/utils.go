@@ -129,6 +129,15 @@ func TrimUnused(data []byte, blocksize int) []byte {
 	return data[:dlen-trim]
 }
 
+// Generate padding for arduboy data, which is always 0xFF
+func MakePadding(length int) []byte {
+	result := make([]byte, length)
+	for i := range result {
+		result[i] = 0xFF
+	}
+	return result
+}
+
 // Produce an md5 string from given data (a simple shortcut)
 func Md5String(data []byte) string {
 	hash := md5.Sum(data)

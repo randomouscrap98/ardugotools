@@ -6,17 +6,13 @@ package arduboy
 import (
 	"fmt"
 	"io"
+	"log"
 	"strings"
 )
 
 const (
 	FxDevExpectedFlashCapacity = 2 ^ 24
 )
-
-// Information pertaining to how to parse the raw data from
-// the fx data section.
-// type FxDataParse struct {
-// }
 
 // A single field put into the fx data blob. May generate multiple
 // fields based on configuration
@@ -47,8 +43,8 @@ type FxDataOutput struct {
 // "current location" within the data writer, and should return the updated position
 // within the data writer
 func ParseFxField(field *FxDataField, header *strings.Builder, data io.Writer,
-	position int) (error, int) {
-	return nil, 0
+	position int) (int, error) {
+	return 0, nil
 }
 
 // Return the line representing the full field at the given address.
@@ -71,24 +67,23 @@ func MakeFxHeaderMainPointer(name string, addr uint, length uint) string {
 // Returns the error and the length of data and save
 // NOTE: THIS MUST BE USED ON A 16MB FLASH, due to how the FX libary
 // works! I'm sorry!
-func ParseFxData(data *FxData, output *FxDataOutput) (error, int, int) {
+func ParseFxData(data *FxData, output *FxDataOutput) (int, int, error) {
 	savepos := 0
 	datapos := 0
 	// Even though we don't really want the data to all reside in memory at
 	// once, it's just easier if we put the header into a string builder.
 	var sb strings.Builder
-	//io.WriteString(output.Header, fmt.Sprintf("// Generated on %s using ardugotools"))
 	var err error
 	for _, field := range data.Data {
-		err, datapos = ParseFxField(field, &sb, output.Data, datapos)
+		datapos, err = ParseFxField(field, &sb, output.Data, datapos)
 		if err != nil {
-			return err, 0, 0
+			return 0, 0, err
 		}
 	}
 	for _, field := range data.Save {
-		err, savepos = ParseFxField(field, &sb, output.Save, savepos)
+		savepos, err = ParseFxField(field, &sb, output.Save, savepos)
 		if err != nil {
-			return err, 0, 0
+			return 0, 0, err
 		}
 	}
 
@@ -98,17 +93,48 @@ func ParseFxData(data *FxData, output *FxDataOutput) (error, int, int) {
 
 	savelength := uint(savepos)
 	datalength := uint(savepos)
-	saveStart := FxDevExpectedFlashCapacity - AlignWidth(savelength, FxSaveAlignment)
-	dataStart := saveStart - AlignWidth(datalength, uint(FXPageSize))
+	savelengthFlash := AlignWidth(savelength, FxSaveAlignment)
+	datalengthFlash := AlignWidth(datalength, uint(FXPageSize))
+	saveStart := FxDevExpectedFlashCapacity - savelengthFlash
+	dataStart := saveStart - datalengthFlash
+
+	// Write the padding; the files need to be pre-padded
+	pad, err := output.Data.Write(MakePadding(int(datalengthFlash - datalength)))
+	if err != nil {
+		return 0, 0, err
+	}
+	log.Printf("Data padding is %d bytes\n", pad)
+	if savelength > 0 {
+		pad, err := output.Save.Write(MakePadding(int(savelengthFlash - savelength)))
+		if err != nil {
+			return 0, 0, err
+		}
+		log.Printf("Save padding is %d bytes\n", pad)
+	}
+
+	// Dump the data into the dev data; alignment is already there
+	output.Data.Seek(0, io.SeekStart)
+	_, err = io.Copy(output.Dev, output.Data)
+	if err != nil {
+		return 0, 0, err
+	}
 
 	// Can always write the fx data stuff
 	io.WriteString(output.Header, MakeFxHeaderMainPointer("FX_DATA", dataStart, datalength))
 
 	// Apparently can't always write the save (though it really should be safe...)
 	if savelength > 0 {
+		// Dump save into the dev data; alignment is already there
+		output.Save.Seek(0, io.SeekStart)
+		_, err = io.Copy(output.Dev, output.Save)
+		if err != nil {
+			return 0, 0, err
+		}
 		io.WriteString(output.Header, MakeFxHeaderMainPointer("FX_SAVE", saveStart, savelength))
 	}
 
+	// Finally, put the header into the actual place rather than in-memory
 	io.WriteString(output.Header, sb.String())
-	return nil, int(datalength), int(savelength)
+
+	return int(datalength), int(savelength), nil
 }

@@ -177,7 +177,7 @@ func ParseHeader(data []byte) (*FxHeader, []byte, error) {
 }
 
 // Read any portion of flashcart at given address. Not performant at all
-func ReadFlashcartInto(sercon io.ReadWriter, address int, length int, output io.Writer, readbuf []byte) error { //data []byte) error {
+func ReadFlashcartInto(sercon io.ReadWriter, address int, length int, output io.Writer, readbuf []byte) error {
 	page := uint16(address / FXPageSize)
 	skip := address - int(page)*FXPageSize
 	totalLength := length + skip

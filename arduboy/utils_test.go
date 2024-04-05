@@ -25,3 +25,22 @@ func TestAlignWidth_All(t *testing.T) {
 	testAlignWidth(36, 4, 36, t)
 	testAlignWidth(37, 4, 40, t)
 }
+
+func TestMakePadding(t *testing.T) {
+	result := MakePadding(1)
+	if len(result) != 1 {
+		t.Fatalf("Expected exactly one byte!")
+	}
+	if result[0] != 0xFF {
+		t.Fatalf("Expected one byte to be 0xFF!")
+	}
+	result = MakePadding(233)
+	if len(result) != 233 {
+		t.Fatalf("Expected exactly 233 bytes!")
+	}
+	for i := range result {
+		if result[i] != 0xFF {
+			t.Fatalf("Expected byte [%d] to be 0xFF, was %d!", i, result[i])
+		}
+	}
+}
