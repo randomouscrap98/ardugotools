@@ -133,7 +133,8 @@ func PalettedToImageTitleBW(raw []byte, format string) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-// Convert real image to paletted image, no resizing
+// Convert real image to paletted image, no resizing. Returns paletted
+// blob and width/height of image
 func ImageToPaletted(img image.Image, whiteThreshold uint8, alphaThreshold uint8) ([]byte, int, int) {
 	grayImg := imaging.Grayscale(img)
 	width := grayImg.Rect.Dx()
@@ -263,7 +264,6 @@ func SplitImageToTiles(rawimage io.Reader, config *TileConfig) ([]*image.NRGBA, 
 	imgwidth := bounds.Dx()
 	imgheight := bounds.Dy()
 	computed := config.Expand(imgwidth, imgheight)
-	//fmt.Printf("Computed: %v", computed)
 	err = computed.ValidateGeneral()
 	if err != nil {
 		return nil, nil, err
@@ -290,8 +290,8 @@ func SplitImageToTiles(rawimage io.Reader, config *TileConfig) ([]*image.NRGBA, 
 	return results, computed, nil
 }
 
-// Convert the given paletted image to the header data + fxdata
-// (returns a tuple). Taken almost directly from https://github.com/MrBlinky/Arduboy-Python-Utilities/blob/main/image-converter.py
+// Convert the given paletted image to the header data. Taken almost directly from
+// https://github.com/MrBlinky/Arduboy-Python-Utilities/blob/main/image-converter.py
 // THIS FUNCTION CAN BE MEMORY INTENSIVE! The entire code file is buffered in memory!
 func PalettedToCode(ptiles [][]byte, config *TileConfig, computed *TileConfigComputed) (string, error) {
 	if config == nil {
