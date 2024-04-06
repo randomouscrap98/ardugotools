@@ -58,8 +58,10 @@ func (d *FxDataField) ReasonableDefaults() {
 // All fields requested in the entire fx data blob. It must always
 // be explicit
 type FxData struct {
-	Data map[string]*FxDataField
-	Save map[string]*FxDataField
+	Data          map[string]*FxDataField
+	Save          map[string]*FxDataField
+	KeyOrder      []string
+	MinSaveLength int
 }
 
 // Parse a single FX field, regardless of where it's supposed to go, and
@@ -178,6 +180,7 @@ func ParseFxField(name string, field *FxDataField, header io.Writer, data io.Wri
 	default:
 		return 0, fmt.Errorf("Unknown format type %s", field.Format)
 	}
+	io.WriteString(header, MakeFxHeaderAddress(name+"Length", truelength))
 	return truelength + position, nil
 }
 
@@ -219,49 +222,48 @@ type FxOffsets struct {
 // NOTE: THIS MUST BE USED ON A 16MB FLASH, due to how the FX libary
 // works! I'm sorry!
 func ParseFxData(data *FxData, header io.Writer, bin io.Writer) (*FxOffsets, error) {
-	savepos := 0
-	datapos := 0
+
+	// Both data and save operate the same way, so just make a function which can do both.
+	// TODO: This may be too generic and you may have to split this out again
+	parseSet := func(d map[string]*FxDataField, alignment int, minlength int, name string) (int, int, error) {
+		datapos := 0
+		var err error
+
+		for key := range d {
+			datapos, err = ParseFxField(key, d[key], header, bin, datapos)
+			if err != nil {
+				return 0, 0, err
+			}
+		}
+
+		// Gotta pad the data (if it exists...)
+		length := datapos
+		lengthflash := int(AlignWidth(uint(max(length, minlength)), uint(alignment)))
+		if lengthflash > 0 {
+			pad, err := bin.Write(MakePadding(lengthflash - length))
+			if err != nil {
+				return 0, 0, err
+			}
+			log.Printf("%s padding is %d bytes\n", name, pad)
+		}
+		return length, lengthflash, nil
+	}
+
 	result := FxOffsets{}
 	var err error
 
 	io.WriteString(header, "#pragma once\n\nusing uint24_t = __uint24;\n\n")
 
 	io.WriteString(header, "// Data fields (offsets into data section)\n")
-	for key := range data.Data {
-		datapos, err = ParseFxField(key, data.Data[key], header, bin, datapos)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// Gotta pad the data (if it exists...)
-	result.DataLength = datapos
-	result.DataLengthFlash = int(AlignWidth(uint(result.DataLength), uint(FXPageSize)))
-	if result.DataLength > 0 {
-		pad, err := bin.Write(MakePadding(result.DataLengthFlash - result.DataLength))
-		if err != nil {
-			return nil, err
-		}
-		log.Printf("Data padding is %d bytes\n", pad)
+	result.DataLength, result.DataLengthFlash, err = parseSet(data.Data, FXPageSize, 0, "Data")
+	if err != nil {
+		return nil, err
 	}
 
 	io.WriteString(header, "\n// Save fields (offsets into save section)\n")
-	for key := range data.Save {
-		savepos, err = ParseFxField(key, data.Save[key], header, bin, savepos)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// Gotta pad the save (if it exists...)
-	result.SaveLength = savepos
-	result.SaveLengthFlash = int(AlignWidth(uint(result.SaveLength), FxSaveAlignment))
-	if result.SaveLength > 0 {
-		pad, err := bin.Write(MakePadding(result.SaveLengthFlash - result.SaveLength))
-		if err != nil {
-			return nil, err
-		}
-		log.Printf("Save padding is %d bytes\n", pad)
+	result.SaveLength, result.SaveLengthFlash, err = parseSet(data.Data, FxSaveAlignment, data.MinSaveLength, "Save")
+	if err != nil {
+		return nil, err
 	}
 
 	// Figure out the positions

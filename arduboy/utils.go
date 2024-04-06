@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
 )
 
@@ -234,6 +235,45 @@ func EchoSpaceControls(s string) string {
 	replacer := strings.NewReplacer("\n", "\\n", "\r", "\\r", "\t", "\\t")
 	return replacer.Replace(s)
 }
+
+func SortedKeys[S comparable, T any](m map[S]T, order []S) []S {
+	// Create a simple index map for all keys
+	sortedKeyMap := make(map[S]int)
+	// First, fill it with all keys from map
+	for k := range m {
+		sortedKeyMap[k] = 999999
+	}
+	// Now, overwrite existing keys with the sorted ones
+	for i, k := range order {
+		sortedKeyMap[k] = i
+	}
+	// This is the result key list. It should have all keys
+	sortedKeys := make([]S, len(m))
+	i := 0
+	for k := range m {
+		sortedKeys[i] = k
+		i++
+	}
+	// IDK if this is slow but... now we sort the sortedKeys by the
+	// index values contained within the keymap
+	sort.Slice(sortedKeys, func(i, j int) bool {
+		return sortedKeyMap[sortedKeys[i]] < sortedKeyMap[sortedKeys[j]]
+	})
+	return sortedKeys
+}
+
+// // Sort the list main by another list. Any missing items will be put at the end
+// func SortListByOther[T comparable](main, order []T) []T {
+//   result := make([]T, 0, len(main))
+//   order2 := make([]T, 0, len(order))
+//   copy(order2, order)
+//
+//   for _, o := range order {
+//     if
+//   }
+//
+//   return result
+// }
 
 func FindStringDiff(a string, b string) error {
 	maxlen := max(len(a), len(b))

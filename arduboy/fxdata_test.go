@@ -65,6 +65,8 @@ func TestParseFxData_FromFiles(t *testing.T) {
 		t.Fatalf("Error returned from ParseFxData: %s", err)
 	}
 
+	fmt.Printf("Header:\n%s", string(header.Bytes()))
+
 	// This is the exact length of the uneven.bin (perhaps programmatically read this?)
 	if offsets.SaveLength != 1031 {
 		t.Fatalf("Expected savelength 1031, got %d", offsets.SaveLength)
@@ -106,5 +108,4 @@ func TestParseFxData_FromFiles(t *testing.T) {
 		t.Fatalf("Generated fxdata not the same at index %d! old length %d vs new %d", difpos, len(fxoldgen), len(bbin))
 	}
 
-	fmt.Printf("Header:\n%s", string(header.Bytes()))
 }
