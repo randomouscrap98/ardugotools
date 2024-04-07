@@ -44,3 +44,31 @@ func TestMakePadding(t *testing.T) {
 		}
 	}
 }
+
+func TestSortedKeys(t *testing.T) {
+	keys := []string{"cows", "NO", "chickens", "sheep"}
+	ti := func(d []string, index int, key string) {
+		if d[index] != key {
+			t.Fatalf("Expected %s at %d, was %s", key, index, d[index])
+		}
+	}
+	// I'm hoping that the random keys will manifest within the loop
+	for i := 0; i < 100; i++ {
+		dic := make(map[string]*int)
+		dic["a"] = nil
+		dic["b"] = nil
+		dic["chickens"] = nil
+		dic["sheep"] = nil
+		dic["cows"] = nil
+		sorted := SortedKeys(dic, keys)
+		if len(sorted) != len(dic) {
+			t.Fatalf("SortedKeys not right length. Expected %d, got %d", len(dic), len(sorted))
+		}
+		ti(sorted, 0, "cows")
+		ti(sorted, 1, "chickens")
+		ti(sorted, 2, "sheep")
+		if (sorted[3] != "a" && sorted[3] != "b") || (sorted[4] != "a" && sorted[4] != "b") {
+			t.Fatalf("SortedKeys did not contain the non-sorted keys!")
+		}
+	}
+}

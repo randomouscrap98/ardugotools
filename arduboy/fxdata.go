@@ -229,7 +229,7 @@ func ParseFxData(data *FxData, header io.Writer, bin io.Writer) (*FxOffsets, err
 		datapos := 0
 		var err error
 
-		for key := range d {
+		for _, key := range SortedKeys(d, data.KeyOrder) {
 			datapos, err = ParseFxField(key, d[key], header, bin, datapos)
 			if err != nil {
 				return 0, 0, err
@@ -261,7 +261,7 @@ func ParseFxData(data *FxData, header io.Writer, bin io.Writer) (*FxOffsets, err
 	}
 
 	io.WriteString(header, "\n// Save fields (offsets into save section)\n")
-	result.SaveLength, result.SaveLengthFlash, err = parseSet(data.Data, FxSaveAlignment, data.MinSaveLength, "Save")
+	result.SaveLength, result.SaveLengthFlash, err = parseSet(data.Save, FxSaveAlignment, data.MinSaveLength, "Save")
 	if err != nil {
 		return nil, err
 	}

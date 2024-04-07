@@ -262,19 +262,6 @@ func SortedKeys[S comparable, T any](m map[S]T, order []S) []S {
 	return sortedKeys
 }
 
-// // Sort the list main by another list. Any missing items will be put at the end
-// func SortListByOther[T comparable](main, order []T) []T {
-//   result := make([]T, 0, len(main))
-//   order2 := make([]T, 0, len(order))
-//   copy(order2, order)
-//
-//   for _, o := range order {
-//     if
-//   }
-//
-//   return result
-// }
-
 func FindStringDiff(a string, b string) error {
 	maxlen := max(len(a), len(b))
 	for i := 0; i < maxlen; i++ {

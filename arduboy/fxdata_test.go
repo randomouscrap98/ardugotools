@@ -10,8 +10,9 @@ import (
 func TestParseFxData_FromFiles(t *testing.T) {
 	// Create a basic configuration
 	config := FxData{
-		Data: make(map[string]*FxDataField),
-		Save: make(map[string]*FxDataField),
+		Data:     make(map[string]*FxDataField),
+		Save:     make(map[string]*FxDataField),
+		KeyOrder: []string{"spritesheet", "myhex", "mybase64", "mystring"},
 	}
 
 	// Now, add the spritesheet as data
