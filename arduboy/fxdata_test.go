@@ -24,7 +24,9 @@ func TestParseFxData_FromFiles(t *testing.T) {
 			// fxdata requires special filenames (blegh)
 			//Width:   16,
 			//Height:  16,
-			UseMask: true,
+			UseMask:        true,
+			Threshold:      100,
+			AlphaThreshold: 10,
 		},
 	}
 
@@ -100,6 +102,10 @@ func TestParseFxData_FromFiles(t *testing.T) {
 
 	bbin := bin.Bytes()
 	if !bytes.Equal(fxoldgen, bbin) {
+		err = os.WriteFile("fxdata_test_error.bin", bbin, 0660)
+		if err != nil {
+			t.Fatalf("Couldn't write error file: %s", err)
+		}
 		difpos := 0
 		for difpos = range min(len(fxoldgen), len(bbin)) {
 			if fxoldgen[difpos] != bbin[difpos] {
