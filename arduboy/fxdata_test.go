@@ -2,7 +2,7 @@ package arduboy
 
 import (
 	"bytes"
-	"fmt"
+	//"fmt"
 	"os"
 	"testing"
 )
@@ -68,7 +68,7 @@ func TestParseFxData_FromFiles(t *testing.T) {
 		t.Fatalf("Error returned from ParseFxData: %s", err)
 	}
 
-	fmt.Printf("Header:\n%s", string(header.Bytes()))
+	//fmt.Printf("Header:\n%s", string(header.Bytes()))
 
 	// This is the exact length of the uneven.bin (perhaps programmatically read this?)
 	if offsets.SaveLength != 1031 {
