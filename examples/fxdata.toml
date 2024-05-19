@@ -1,6 +1,8 @@
+# -----------------------------------------------------------------
 # An example file to generate fx data. Although more verbose than
 # the python fxdata.txt format, it supports more robust strings and
 # can be extended in the future to support far more features.
+# -----------------------------------------------------------------
 
 # NOTE: if you need FX save data, simply set this to 1. Setting to
 # other values is TECHNICALLY supported, but the current FX library 
@@ -18,32 +20,39 @@ MinSaveLength = 1 # Reserve space in the fx data for save
 # to be more robust, or if someone writes a more robust library, you 
 # can reserve more space.
 
+# In most programming langauges, maps (tables/dictionaries/etc) have no
+# guaranteed order. If you absolutely need certain data to come first, or want
+# to order all the data manually, use this (optional)
+KeyOrder=["myspritesheet","mystring"]
+
 # Store an image into the fx data named 'myspritesheet'. You can 
 # optionally split the image into tiles by setting a width and height, 
 # as seen here. If not set, the image is stored as a single giant image.
 [Data.myspritesheet]
 Data = "spritesheet.png"
 Format = "image"
-Image = {
-  # Width and height of each individual sprite. Default = size of image
-  Width = 16,
-  Height = 16,
-  # The space between each sprite, including on the edges. For instance, 
-  # this says there is 8 pixels of unused space on the edges of the sprite
-  # sheet and 8 pixels of unused space between each sprite. Default = 0
-  Spacing = 8,
-  # Whether to use alpha as a mask, which is then woven into the data.
-  # Default = false
-  UseMask = true,
-  # The upper bound for what is considered 'black'. The average of the three
-  # channels are taken per pixel, so here we are considering anything that is
-  # "slightly less than half bright" to be black on the arduboy. Default = 100
-  Threshold = 100,
-  # The upper bound for what is considered 'transparent' (alpha channel value).
-  # Here, we are saying a transparent pixel is anything that is 
-  # "almost entirely" transparent (10/255). Default = 10
-  AlphaThreshold = 10
-}
+Image.Width = 16
+Image.Height = 16
+Image.Spacing = 8
+Image.UseMask = true
+Image.Threshold = 100
+Image.AlphaThreshold = 10
+# * Width and height of each individual sprite. 
+#   Default = size of image
+# * Spacing = space between each sprite, including on the edges. For instance,
+#   this says there is 8 pixels of unused space on the edges of the sprite
+#   sheet and 8 pixels of unused space between each sprite. 
+#   Default = 0
+# * UseMask: Whether to use alpha as a mask, which is then woven into the data.
+#   Default = false
+# * Threshold: The upper bound for what is considered 'black'. The average of 
+#   the three channels are taken per pixel, so here we are considering anything 
+#   that is "slightly less than half bright" to be black on the arduboy (100/255)
+#   Default = 100
+# * AlphaThreshold: The upper bound for what is considered 'transparent' 
+#   (alpha channel value). Here, we are saying a transparent pixel is anything 
+#   that is "almost entirely" transparent (10/255). 
+#   Default = 10
 
 # Some raw data. Hex data is ALWAYS written as bytes, not as the hex
 # string itself. It is useful for encoding raw data generated from another

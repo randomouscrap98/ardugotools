@@ -10,6 +10,8 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/mazznoer/csscolorparser"
+	"github.com/pelletier/go-toml/v2"
+
 	"github.com/randomouscrap98/ardugotools/arduboy"
 )
 
@@ -789,6 +791,87 @@ func (c *SplitCodeCmd) Run() error {
 }
 
 // **********************************
+// *       FXDATA COMMANDS          *
+// **********************************
+
+// Sketch read command
+type FxDataGenerateCmd struct {
+	Infile    string `arg:"" default:"fxdata.toml" help:"The fxdata file to read from (default: fxdata.toml)"`
+	Outfolder string `type:"path" short:"o" help:"Folder to put the generated fxdata (default: fxdata)"`
+	Datadir   string `type:"path" short:"d" help:"Folder where data is located (optional)"`
+	NoRelease bool   `help:"Don't generate the release files"`
+}
+
+func (c *FxDataGenerateCmd) Run() error {
+	// Figure out save location
+	if c.Outfolder == "" {
+		c.Outfolder = "fxdata" //fmt.Sprintf("sketch_%s.hex", FileSafeDateTime())
+	}
+	originalDir, err := os.Getwd()
+	fatalIfErr("fxgenerate", "get current directory", err)
+	// Read fxdata toml
+	var fxdata arduboy.FxData
+	rawfxdata, err := os.ReadFile(c.Infile)
+	fatalIfErr("fxgenerate", "read fxdata file", err)
+	err = toml.Unmarshal(rawfxdata, &fxdata)
+	fatalIfErr("fxgenerate", "parse fxdata file", err)
+	releasePath := filepath.Join(c.Outfolder, "release")
+	// Pre-generate the output structure
+	if c.NoRelease {
+		err = os.MkdirAll(c.Outfolder, 770)
+	} else {
+		err = os.MkdirAll(releasePath, 0770)
+	}
+	fatalIfErr("fxgenerate", "create output folder", err)
+	// Open default files. Later, we will split them for release
+	headerPath := filepath.Join(c.Outfolder, "fxdata.h")
+	devPath := filepath.Join(c.Outfolder, "fxdata_dev.bin")
+	hfile, err := os.Create(headerPath)
+	fatalIfErr("fxgenerate", "create output header", err)
+	defer hfile.Close()
+	dfile, err := os.Create(devPath)
+	fatalIfErr("fxgenerate", "create output dev binary", err)
+	defer dfile.Close()
+	if c.Datadir != "" {
+		err = os.Chdir(c.Datadir)
+		fatalIfErr("fxgenerate", "change to data dir", err)
+	}
+	// Actually generate the data. This is just the dev data though
+	parseresult, err := arduboy.ParseFxData(&fxdata, hfile, dfile)
+	fatalIfErr("fxgenerate", "generate data", err)
+	err = os.Chdir(originalDir)
+	fatalIfErr("fxgenerate", "change back to original dir", err)
+	result := make(map[string]interface{})
+	if !c.NoRelease {
+		// Now that we know the start of the save (if it's there), we can
+		// generate the release data and save files
+		dataPath := filepath.Join(releasePath, "fxdata.bin")
+		savePath := filepath.Join(releasePath, "fxsave.bin")
+		datfile, err := os.Create(dataPath)
+		fatalIfErr("fxgenerate", "create output release data", err)
+		defer datfile.Close()
+		savfile, err := os.Create(savePath)
+		fatalIfErr("fxgenerate", "create output release save", err)
+		defer savfile.Close()
+		_, err = dfile.Seek(0, io.SeekStart)
+		fatalIfErr("fxgenerate", "re-read data file", err)
+		_, err = io.CopyN(datfile, dfile, int64(parseresult.DataLengthFlash))
+		fatalIfErr("fxgenerate", "copy release data", err)
+		_, err = io.Copy(savfile, dfile)
+		fatalIfErr("fxgenerate", "copy save data", err)
+		result["FxDataReleaseBinFile"] = dataPath
+		result["FxDataReleaseSaveFile"] = savePath
+	}
+	result["FxDataFile"] = c.Infile
+	result["FxDataOutputfolder"] = c.Outfolder
+	result["FxDataHeaderFile"] = headerPath
+	result["FxDataDevBinFile"] = devPath
+	result["Result"] = parseresult
+	PrintJson(result)
+	return nil
+}
+
+// **********************************
 // *    ALL TOGETHER COMMANDS       *
 // **********************************
 
@@ -826,6 +909,9 @@ var cli struct {
 		Img2Title Img2ImgCmd   `cmd:"" help:"Convert any image to a 2 color 128x64 black and white image" name:"img2title"`
 		SplitCode SplitCodeCmd `cmd:"" help:"Split image, generate code" name:"splitcode"`
 	} `cmd:"" help:"Commands which work directly on images, such as titles or spritesheets"`
+	Fxdata struct {
+		Generate FxDataGenerateCmd `cmd:"" help:"Generate fxdata headers and binaries from an fxdata config"`
+	} `cmd:"" help:"Commands for working with fxdata (such as generating fxdata)"`
 	Version kong.VersionFlag `help:"Show version information"`
 	Norgb   bool             `help:"Disable all rgb while accessing device"`
 }

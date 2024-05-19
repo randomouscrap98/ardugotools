@@ -279,12 +279,12 @@ func ParseFxData(data *FxData, header io.Writer, bin io.Writer) (*FxOffsets, err
 	// in ours, we write it at the bottom. Hopefully not much of a problem...)
 	io.WriteString(header, "\n// FX addresses (only really used for initialization)\n")
 	io.WriteString(header, MakeFxHeaderMainPointer("FX_DATA", uint(result.DataStart), uint(result.DataLength)))
-	if result.SaveLength > 0 {
+	if max(result.SaveLengthFlash) > 0 {
 		io.WriteString(header, MakeFxHeaderMainPointer("FX_SAVE", uint(result.SaveStart), uint(result.SaveLength)))
 	}
 
 	io.WriteString(header, "// Helper macro to initialize fx, call in setup()\n")
-	if result.SaveLength > 0 {
+	if result.SaveLengthFlash > 0 {
 		io.WriteString(header, "#define FX_INIT() FX::begin(FX_DATA_PAGE, FX_DATA_SAVE)\n")
 	} else {
 		io.WriteString(header, "#define FX_INIT() FX::begin(FX_DATA_PAGE)\n")
