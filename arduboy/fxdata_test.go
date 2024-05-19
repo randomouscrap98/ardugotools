@@ -117,5 +117,45 @@ func TestParseFxData_FromFiles(t *testing.T) {
 		}
 		t.Fatalf("Generated fxdata not the same at index %d! old length %d vs new %d", difpos, len(fxoldgen), len(bbin))
 	}
+}
 
+func TestParseFxData_Regression_NoSaveFields(t *testing.T) {
+	// Create a basic configuration
+	config := FxData{
+		Data:     make(map[string]*FxDataField),
+		Save:     make(map[string]*FxDataField),
+		KeyOrder: []string{"spritesheet", "myhex", "mybase64", "mystring"},
+	}
+
+	// And add some hex. this should be 17 bytes
+	config.Data["myhex"] = &FxDataField{
+		Data:   "000102030405060708090A0B0C0D0E0F10",
+		Format: "hex",
+	}
+
+	// How people would usually use this
+	config.MinSaveLength = 1
+
+	var header bytes.Buffer
+	var bin bytes.Buffer
+
+	// Call the function
+	offsets, err := ParseFxData(&config, &header, &bin)
+	if err != nil {
+		t.Fatalf("Error returned from ParseFxData: %s", err)
+	}
+
+	if offsets.DataLength != 17 {
+		t.Fatalf("Expected length 17, got %d", offsets.DataLength)
+	}
+	if offsets.DataLengthFlash != FXPageSize {
+		t.Fatalf("Expected flash length %d, got %d", FXPageSize, offsets.DataLength)
+	}
+
+	if offsets.SaveLength != 0 {
+		t.Fatalf("Expected save length 0, got %d", offsets.SaveLength)
+	}
+	if offsets.SaveLengthFlash != FxSaveAlignment {
+		t.Fatalf("Expected flash save length %d, got %d", FxSaveAlignment, offsets.SaveLength)
+	}
 }

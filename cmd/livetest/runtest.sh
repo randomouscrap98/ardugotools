@@ -24,11 +24,32 @@ cwd=$(pwd)
 tb="$cwd/testbin"
 tbc="$tb"
 tfs="$cwd/../../testfiles"
+efs="$cwd/../../examples"
 
 # Build the thing
 cd ../ardugotools
 go build -o $tb
 cd $cwd
+
+# These initial tests have nothing to do with the device
+rm -rf "$idr/fxdata"
+$tbc fxdata generate "$efs/fxdata.toml" -d "$tfs" -o "$idr/fxdata"
+if [ ! -f "$idr/fxdata/fxdata.h" ]; then
+	echo "Expected fxdata.h to exist"
+	exit 1
+fi
+if [ ! -f "$idr/fxdata/fxdata_dev.bin" ]; then
+	echo "Expected fxdata_dev.bin to exist"
+	exit 1
+fi
+if [ ! -f "$idr/fxdata/release/fxdata.bin" ]; then
+	echo "Expected release/fxdata.bin to exist"
+	exit 1
+fi
+if [ ! -f "$idr/fxdata/release/fxsave.bin" ]; then
+	echo "Expected release/fxsave.bin to exist"
+	exit 1
+fi
 
 # Start running some tests. You MUST have an arduboy connected!
 $tbc device scan | jq -e 'type=="array" and length==1'
