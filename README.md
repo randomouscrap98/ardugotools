@@ -13,24 +13,42 @@ A simple, single-binary CLI toolset for Arduboy. Runs on many systems
 - Convert between sketch hex/bin and back
 - Convert title images to bin and back
 - Write FX dev data
-- Read and write arbitrary flashcart data at any location (useful for 
+- Read and write arbitrary flashcart data at any location (useful for unique flashcart formats or custom updates)
 - Convert spritesheet or images to code + split to individual images
 
 (More to come)
 
 ## Building / Using 
 
-```
+Once you have the code and go installed, just run `go build` in the repo and it should produce an executable:
+
+```shell
 cd cmd/ardugotools
 go build
 ./ardugotools --help
 ```
+### Commands
+
+You can get a list of all commands with `ardugotools --help`. Further information about each command can be found by running help on said command, like `ardugotools flashcart write --help`. Note that help is auto-generated, so I'm sorry for any funny formatting issues...
+
+Many commands run against a device. You must specify the port a device is on (usually something like **COM5** on Windows or **/dev/ttyACM0**), or you can substitute `any` to connect to the first device found.
+
+Here's some examples of what you might do:
+```shell
+ardugotools device scan            # See all currently connected devices
+ardugotools device query any       # Get deep information about the first connected device
+ardugotools sketch read any        # Read the sketch that's on the first connected device
+ardugotools eeprom read COM5       # Read the eeprom that's on a particular device
+ardugotools flashcart scan any --images --html > flashcart.html    # Get a webpage you can browse which shows what's on the flashcart
+```
+
+Note that for most commands, you can omit the "any" and it will still default to the first connected device.
 
 ## Installing 
 
 Choose one of two methods:
 - Download the code and build/install manually (make sure you have [Go](https://go.dev/) installed). This is the most widely supported; use this if no release is available for your system:
-  ```
+  ```shell
   git clone https://github.com/randomouscrap98/ardugotools.git
   cd ardugotools/cmd/ardugotools
   go install
