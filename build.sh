@@ -1,12 +1,13 @@
 #!/bin/bash
 set -e
 
+basebuilddir="`pwd`/build"
 cd arduboy
 go test -v
-cd ..
+cd ../cmd/ardugotools
 
 build() {
-	builddir=build/${1}_${2}
+	builddir="$basebuilddir/${1}_${2}"
 	mkdir -p $builddir
 	GOOS=$1 GOARCH=$2 GO386=softfloat go build -o $builddir/ardugotools
 	echo "Compiled $builddir"

@@ -2,7 +2,7 @@
 
 rm -rf build
 rm -rf dist
-rm -f ardugotools
-rm -rf livetest/ignore
-rm -rf livetest/testbin
+rm -f cmd/ardugotools/ardugotools
+rm -rf cmd/livetest/ignore
+rm -rf cmd/livetest/testbin
 rm -rf testbin
