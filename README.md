@@ -21,6 +21,7 @@ A simple, single-binary CLI toolset for Arduboy. Runs on many systems
 ## Building / Using 
 
 ```
+cd cmd/ardugotools
 go build
 ./ardugotools --help
 ```
@@ -31,7 +32,7 @@ Choose one of two methods:
 - Download the code and build/install manually (make sure you have [Go](https://go.dev/) installed). This is the most widely supported; use this if no release is available for your system:
   ```
   git clone https://github.com/randomouscrap98/ardugotools.git
-  cd ardugotools
+  cd ardugotools/cmd/ardugotools
   go install
   # You should now have access to ardugotools on the command line
   ```
