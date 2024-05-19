@@ -38,11 +38,16 @@ func (i *FxDataImageConfig) ReasonableDefaults() {
 // A single field put into the fx data blob. May generate multiple
 // fields based on configuration
 type FxDataField struct {
-	//Type string
-	Data string
-	//Delimeter []byte
+	Data   string
 	Format string
 	Image  *FxDataImageConfig
+	// This "delimeter" stuff might be over-stepping, and I just
+	// don't know how much I want the data parser to do. It would be
+	// nice not to require an external script to generate specially
+	// formatted data, but there's a lot of ways people might want to
+	// index their data. I think I will wait until a clear and repeated
+	// need arises, then I will design it based on that need.
+	//Delimeter []byte
 }
 
 func (d *FxDataField) ReasonableDefaults() {
