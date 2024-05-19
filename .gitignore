@@ -1,5 +1,4 @@
 main
-cmd/ardugotools/ardugotools
 *.exe
 *.test
 *.hex
@@ -11,12 +10,9 @@ cmd/ardugotools/ardugotools
 *.gif
 *.h
 *.jpg
-testbin
 build/
 dist/
 ignore/
-adhoc/found_chunks/
-adhoc/adhoc
 
 # A special softlink in my directory for testing purposes
 adbpy

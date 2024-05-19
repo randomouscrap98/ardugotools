@@ -21,14 +21,14 @@ if ! [ -e "$warningfile" ]; then
 fi
 
 cwd=$(pwd)
-tb="testbin"
-tbc="./$tb"
+tb="$cwd/testbin"
+tbc="$tb"
+tfs="$cwd/../../testfiles"
 
 # Build the thing
-cd ..
+cd ../ardugotools
 go build -o $tb
 cd $cwd
-mv ../$tb .
 
 # Start running some tests. You MUST have an arduboy connected!
 $tbc device scan | jq -e 'type=="array" and length==1'
@@ -55,7 +55,7 @@ $tbc sketch hex2bin -i $idr/testsketch_read.hex -o $idr/testsketch_read.bin
 diff $idr/testsketch.bin $idr/testsketch_read.bin
 
 # Now just write a known good hex to the device for safety
-$tbc sketch write any -i ../testfiles/qr-generator.hex
+$tbc sketch write any -i "$tfs/qr-generator.hex"
 
 # Test if writing + reading from 0 works
 dd if=/dev/urandom of=$idr/test1.bin bs=1 count=1031
@@ -73,7 +73,7 @@ diff $idr/test1.bin $idr/test2_read1.bin
 
 # To not leave the arduboy in a bad state, let's
 # write a good flashcart and read it back to check for transparency
-minicart=../testfiles/minicart.bin
+minicart="$tfs/minicart.bin"
 $tbc flashcart write -i $minicart
 $tbc flashcart readat any 0 $(wc -c <$minicart) -o $idr/testflashcartreadat.bin
 diff $minicart $idr/testflashcartreadat.bin
