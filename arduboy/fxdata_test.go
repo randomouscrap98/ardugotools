@@ -7,6 +7,9 @@ import (
 	"testing"
 )
 
+// This test is IMPORTANT: it tests whether our personal fx data
+// generation produces the SAME file as Mr.Blinky's python scripts.
+// The test bin and fxdata.txt used to generate it are in testfiles
 func TestParseFxData_FromFiles(t *testing.T) {
 	// Create a basic configuration
 	config := FxData{
