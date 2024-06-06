@@ -178,7 +178,10 @@ func luaFixedSave(L *lua.LState, state *FxDataState) int {
 // Run an entire lua script which may write fxdata to the given header and bin files.
 func RunLuaFxGenerator(script string, header io.Writer, bin io.Writer) (*FxOffsets, error) {
 	var offsets FxOffsets
-	var state FxDataState
+	state := FxDataState{
+		Header: header,
+		Bin:    bin,
+	}
 
 	L := lua.NewState()
 	defer L.Close()
