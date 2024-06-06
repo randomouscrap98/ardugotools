@@ -197,6 +197,14 @@ func RunLuaFxGenerator(script string, header io.Writer, bin io.Writer) (*FxOffse
 		return nil, err
 	}
 
+	// Some final calcs based on how much data we wrote
+	offsets.DataLength = state.DataLength
+	offsets.SaveLength = state.SaveLength
+	offsets.DataLengthFlash = int(AlignWidth(uint(offsets.DataLength), uint(FXPageSize)))
+	offsets.SaveLengthFlash = int(AlignWidth(uint(offsets.SaveLength), uint(FxSaveAlignment)))
+	offsets.SaveStart = FxDevExpectedFlashCapacity - offsets.SaveLengthFlash
+	offsets.DataStart = offsets.SaveStart - offsets.DataLengthFlash
+
 	return &offsets, nil
 }
 
