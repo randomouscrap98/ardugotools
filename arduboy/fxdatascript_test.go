@@ -81,6 +81,8 @@ func TestRunLuaFxGenerator_SaveOnly(t *testing.T) {
 // Run through some of the easier to test converters
 func TestRunLuaFxGenerator_Basic(t *testing.T) {
 	script := `
+-- Let's say we want to support namespaces... it's like this
+header("namespace AmazingData {\n")
 -- Some weird increasing hex. 17 bytes
 field("myhex")
 write(hex("000102030405060708090A0B0C0D0E0F10"))
@@ -90,6 +92,19 @@ write(base64("SGVsbG8gd29ybGQh"))
 -- string we write directly, including the null terminator. 40 bytes + 1 (null terminator)
 field("mystring")
 write("owo uwu !@#$%^&*()-_[]{}|;:?/.><,+=~Z188\0")
+-- Raw bytes written directly. 4 bytes
+field("myrawbytes")
+write(bytes({5, 6, 7, 8}))
+-- Raw float32 written directly. 12 bytes
+field("myrawfloats")
+write(bytes({1.2, -99.9, 0.05071}, "float32"))
+-- Raw uint32 written directly. 20 bytes
+field("myrawints")
+write(bytes({8432, 4320, 432, 85, 1010104}, "uint32"))
+-- Raw int16 written directly. 6 bytes
+field("myrawshorts")
+write(bytes({66, -789, 10405}, "int16"))
+header("}\n")
 `
 
 	var header bytes.Buffer
@@ -100,8 +115,9 @@ write("owo uwu !@#$%^&*()-_[]{}|;:?/.><,+=~Z188\0")
 		t.Fatalf("Error running basic fx generator: %s", err)
 	}
 
-	if offsets.DataLength != 70 {
-		t.Fatalf("Expected DataLength=%d, got %d", 70, offsets.DataLength)
+	expectedDataLength := 112
+	if offsets.DataLength != expectedDataLength {
+		t.Fatalf("Expected DataLength=%d, got %d", expectedDataLength, offsets.DataLength)
 	}
 	if offsets.DataLengthFlash != FXPageSize {
 		t.Fatalf("Expected DataLengthFlash=%d, got %d", FXPageSize, offsets.DataLengthFlash)
@@ -115,9 +131,14 @@ write("owo uwu !@#$%^&*()-_[]{}|;:?/.><,+=~Z188\0")
 	}
 
 	expectedheaders := []string{
+		"namespace AmazingData {",
 		"constexpr uint24_t myhex = 0x000000;",
 		"constexpr uint24_t mybase64 = 0x000011;",
 		"constexpr uint24_t mystring = 0x00001D;",
+		"constexpr uint24_t myrawbytes = 0x000046;",
+		"constexpr uint24_t myrawfloats = 0x00004A;",
+		"constexpr uint24_t myrawints = 0x000056;",
+		"constexpr uint24_t myrawshorts = 0x00006A;", // 106 -> 112
 	}
 	for _, exp := range expectedheaders {
 		if strings.Index(headerstr, exp) < 0 {

@@ -258,6 +258,9 @@ func luaBytes(L *lua.LState) int {
 				writebuf(uint8(raw))
 			} else if typ == "byte" || typ == "" {
 				writebuf(byte(raw))
+			} else {
+				L.RaiseError("Unknown type: %s", typ)
+				return 0
 			}
 			if err != nil {
 				L.RaiseError("Error converting array to bytes: %s", err)
