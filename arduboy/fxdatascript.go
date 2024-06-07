@@ -285,6 +285,14 @@ func luaBeginSave(L *lua.LState, state *FxDataState) int {
 	return 0
 }
 
+// Write the given bytes to the binary. You can do this at any time
+func luaWrite(L *lua.LState, state *FxDataState) int {
+	data := L.ToString(1)
+	count := state.WriteBin([]byte(data), L)
+	L.Push(lua.LNumber(count))
+	return 1
+}
+
 // Pad data at THIS point to be aligned to a certain width. This is OVERALL data
 func luaPad(L *lua.LState, state *FxDataState) int {
 	align := L.ToInt(1)
@@ -303,13 +311,16 @@ func luaPad(L *lua.LState, state *FxDataState) int {
 	return 0
 }
 
-// // A super wasteful function to append a 0 to the end of the data.
-// func luaString(L *lua.LState) int {
-// 	s := L.ToString(1)
-//   b := append([]byte(s), 0)
-//   L.Push(lua.LString(string(b)))
-//   return 1
-// }
+// -----------------------------
+//           STATE
+// -----------------------------
+
+// Return the current address pointed to in the system. Knows whether it's
+// save or data
+func luaAddress(L *lua.LState, state *FxDataState) int {
+	L.Push(lua.LNumber(state.CurrentAddress()))
+	return 1
+}
 
 // Run an entire lua script which may write fxdata to the given header and bin files.
 func RunLuaFxGenerator(script string, header io.Writer, bin io.Writer) (*FxOffsets, error) {
@@ -328,6 +339,7 @@ func RunLuaFxGenerator(script string, header io.Writer, bin io.Writer) (*FxOffse
 	L.SetGlobal("bytes", L.NewFunction(luaBytes))
 	state.AddFunction("header", luaHeader, L)
 	state.AddFunction("preamble", luaPreamble, L)
+	state.AddFunction("write", luaWrite, L)
 	state.AddFunction("pad", luaPad, L)
 	state.AddFunction("field", luaField, L)
 	state.AddFunction("begin_save", luaBeginSave, L)
