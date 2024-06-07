@@ -43,10 +43,11 @@ func (state *FxDataState) FinalizeBin() (*FxOffsets, error) {
 		}
 		// Write the save padding. We know data padding is already written if there's a save
 		if newlength > state.BinLength {
-			_, err := state.Bin.Write(MakePadding(newlength - state.BinLength))
+			written, err := state.Bin.Write(MakePadding(newlength - state.BinLength))
 			if err != nil {
 				return nil, err
 			}
+			state.BinLength += written
 		}
 		offsets.SaveLengthFlash = state.BinLength - state.SaveStart
 	} else {
@@ -54,10 +55,11 @@ func (state *FxDataState) FinalizeBin() (*FxOffsets, error) {
 		offsets.DataLength = state.BinLength
 		newlength := int(AlignWidth(uint(state.BinLength), uint(FXPageSize)))
 		if newlength > state.BinLength {
-			_, err := state.Bin.Write(MakePadding(newlength - state.BinLength))
+			written, err := state.Bin.Write(MakePadding(newlength - state.BinLength))
 			if err != nil {
 				return nil, err
 			}
+			state.BinLength += written
 		}
 		offsets.DataLengthFlash = state.BinLength
 	}
@@ -69,9 +71,6 @@ func (state *FxDataState) FinalizeBin() (*FxOffsets, error) {
 // Write the raw string to the header with the given number of extra newlines. Raises
 // a lua "error" if writing the header doesn't work
 func (state *FxDataState) WriteHeader(raw string /*extraNewlines int,*/, L *lua.LState) int {
-	// for i := 0; i < extraNewlines; i++ {
-	// 	raw += "\n"
-	// }
 	written, err := state.Header.Write([]byte(raw))
 	if err != nil {
 		L.RaiseError("Couldn't write raw header string %s: %s", raw, err)
@@ -87,21 +86,6 @@ func (state *FxDataState) WriteBin(raw []byte, L *lua.LState) int {
 		L.RaiseError("Couldn't write raw binary of %d bytes: %s", len(raw), err)
 	}
 	state.BinLength += written
-	return written
-}
-
-// End the data section and begin writting the save section. It's all the same
-// to the bin, we just must remember where the save data starts
-func (state *FxDataState) BeginSave(L *lua.LState) int {
-	// Must align to fx page size
-	newlength := int(AlignWidth(uint(state.BinLength), uint(FXPageSize)))
-	state.DataEnd = state.BinLength
-	state.HasSave = true
-	written := 0
-	if newlength > state.BinLength {
-		written = state.WriteBin(MakePadding(newlength-state.BinLength), L)
-	}
-	state.SaveStart = state.BinLength
 	return written
 }
 
@@ -349,12 +333,6 @@ func luaHeader(L *lua.LState, state *FxDataState) int {
 	return 0
 }
 
-// // Write the preamble. Not done by default, in case you don't want it or something...
-// func luaPreamble(L *lua.LState, state *FxDataState) int {
-// 	state.WriteHeader("#pragma once\n\nusing uint24_t = __uint24;\n\n", L)
-// 	return 0
-// }
-
 // Begin a new variable. This writes the variable as the current address
 // to the header, but does not write any data
 func luaField(L *lua.LState, state *FxDataState) int {
@@ -381,10 +359,25 @@ func luaImageField(L *lua.LState, state *FxDataState) int {
 	return 1
 }
 
-// Begin the save section. Simply beginning save will set that there IS a save
+// End the data section and begin writting the save section. It's all the same
+// to the bin, we just must remember where the save data starts
 func luaBeginSave(L *lua.LState, state *FxDataState) int {
-	state.BeginSave(L)
-	return 0
+	if state.HasSave {
+		L.RaiseError("Save already begun!")
+		return 0
+	}
+	// Must align to fx page size
+	newlength := int(AlignWidth(uint(state.BinLength), uint(FXPageSize)))
+	state.DataEnd = state.BinLength
+	state.HasSave = true
+	written := 0
+	if newlength > state.BinLength {
+		written = state.WriteBin(MakePadding(newlength-state.BinLength), L)
+	}
+	state.SaveStart = state.BinLength
+	log.Printf("Began save at addr 0x%06X, data ends at 0x%06X", state.SaveStart, state.DataEnd)
+	L.Push(lua.LNumber(written))
+	return 1
 }
 
 // Write the given bytes to the binary. You can do this at any time
@@ -440,15 +433,13 @@ func RunLuaFxGenerator(script string, header io.Writer, bin io.Writer) (*FxOffse
 	L.SetGlobal("base64", L.NewFunction(luaBase64))
 	L.SetGlobal("json", L.NewFunction(luaJson))
 	L.SetGlobal("bytes", L.NewFunction(luaBytes))
-	state.AddFunction("address", luaAddress, L) // current address
-	state.AddFunction("header", luaHeader, L)   // Write arbitrary header text
-	//state.AddFunction("preamble", luaPreamble, L) // write the preamble
-	//state.AddFunction("postscript", luaPostscript, L)
-	state.AddFunction("write", luaWrite, L)
-	state.AddFunction("pad", luaPad, L)
-	state.AddFunction("field", luaField, L)
-	state.AddFunction("image_field", luaImageField, L)
-	state.AddFunction("begin_save", luaBeginSave, L)
+	state.AddFunction("address", luaAddress, L)        // current address
+	state.AddFunction("header", luaHeader, L)          // Write arbitrary header text
+	state.AddFunction("field", luaField, L)            // Write header definition for field (begin field)
+	state.AddFunction("image_field", luaImageField, L) // write header stuff for image (begin field)
+	state.AddFunction("write", luaWrite, L)            // Write raw data to bin (no header)
+	state.AddFunction("pad", luaPad, L)                // pad data to given alignment
+	state.AddFunction("begin_save", luaBeginSave, L)   // begin the save section
 
 	// Always write the preamble before the user starts...
 	_, err := io.WriteString(state.Header, "#pragma once\n\nusing uint24_t = __uint24;\n\n")
