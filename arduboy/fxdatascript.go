@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strings"
 
 	"github.com/yuin/gopher-lua"
 )
@@ -67,10 +68,10 @@ func (state *FxDataState) FinalizeBin() (*FxOffsets, error) {
 
 // Write the raw string to the header with the given number of extra newlines. Raises
 // a lua "error" if writing the header doesn't work
-func (state *FxDataState) WriteHeader(raw string, extraNewlines int, L *lua.LState) int {
-	for i := 0; i < extraNewlines; i++ {
-		raw += "\n"
-	}
+func (state *FxDataState) WriteHeader(raw string /*extraNewlines int,*/, L *lua.LState) int {
+	// for i := 0; i < extraNewlines; i++ {
+	// 	raw += "\n"
+	// }
 	written, err := state.Header.Write([]byte(raw))
 	if err != nil {
 		L.RaiseError("Couldn't write raw header string %s: %s", raw, err)
@@ -125,6 +126,91 @@ func luaFile(L *lua.LState) int {
 	log.Printf("Read %d bytes from file %s in lua script", len(bytes), filename)
 	L.Push(lua.LString(string(bytes)))
 	return 1
+}
+
+// Generates raw image data, width, height, and frames as return data.
+// The user can do whatever they want with it
+func luaImage(L *lua.LState) int {
+
+	// TODO: Make sure you generate a help thing for this!
+	filename := L.ToString(1)
+	width := L.ToInt(2)       // Width of tile (0 means use all available width)
+	height := L.ToInt(3)      // Height of tile (0 means use all available height)
+	spacing := L.ToInt(4)     // Spacing between tiles (including on edges)
+	usemask := L.ToBool(5)    // Whether to use transparency as a data mask
+	threshold := L.ToInt(6)   // The upper bound for black pixels
+	alphathresh := L.ToInt(7) // The upper bound for alpha threshold
+
+	// Validation and/or setting the defaults if not set
+	if filename == "" {
+		L.RaiseError("Must provide filename for image!")
+		return 0
+	}
+	if threshold == 0 {
+		threshold = 100
+	}
+	if alphathresh == 0 {
+		alphathresh = 10
+	}
+
+	file, err := os.Open(filename)
+	if err != nil {
+		L.RaiseError("Error opening image file: %s", err)
+		return 0
+	}
+	defer file.Close()
+	tc := TileConfig{
+		Width:   width,
+		Height:  height,
+		Spacing: spacing,
+		UseMask: usemask,
+	}
+	tiles, computed, err := SplitImageToTiles(file, &tc)
+	if err != nil {
+		L.RaiseError("Error splitting image to tiles: %s", err)
+		return 0
+	}
+
+	// Buffer for the whole data, as in the entire thing for images.
+	// We don't check for errors here because... well, CAN an in-memory
+	// buffer throw errors? I'd be surprised...
+	var buf bytes.Buffer
+	onebyte := make([]byte, 1)
+
+	// Need to write the width and height as 2 byte fields
+	preamble := make([]byte, 4)
+	Write2ByteValue(uint16(computed.SpriteWidth), preamble, 0)
+	Write2ByteValue(uint16(computed.SpriteHeight), preamble, 2)
+	buf.Write(preamble)
+
+	// Now write all the tiles
+	for i, tile := range tiles {
+		ptile, w, h := ImageToPaletted(tile, uint8(threshold), uint8(alphathresh))
+		raw, mask, err := PalettedToRaw(ptile, w, h)
+		if err != nil {
+			L.RaiseError("Can't convert tile %d to raw: %s", i, err)
+			return 0
+		}
+		for i := range raw {
+			onebyte[0] = raw[i]
+			buf.Write(onebyte)
+			if usemask {
+				onebyte[0] = mask[i]
+				buf.Write(onebyte)
+			}
+		}
+	}
+	bytes := buf.Bytes()
+	log.Printf("Converted image '%s' to %d tiles of %d width, %d height (%d bytes)",
+		filename, len(tiles), computed.SpriteWidth, computed.SpriteHeight, len(bytes))
+
+	// TODO: document the return types!!!
+	L.Push(lua.LString(string(bytes)))         // Actual raw data
+	L.Push(lua.LNumber(len(tiles)))            // amount of tiles
+	L.Push(lua.LNumber(computed.SpriteWidth))  // individual sprite width
+	L.Push(lua.LNumber(computed.SpriteHeight)) // individual sprite height
+
+	return 4
 }
 
 // Function for lua scripts that lets you parse hex
@@ -259,22 +345,38 @@ func luaDecodeValue(L *lua.LState, value interface{}) lua.LValue {
 // Write raw text to the header. You can use this to start a namespace
 // or whatever
 func luaHeader(L *lua.LState, state *FxDataState) int {
-	state.WriteHeader(L.ToString(1), L.ToInt(2), L)
+	state.WriteHeader(L.ToString(1), L)
 	return 0
 }
 
-// Write the preamble. Not done by default, in case you don't want it or something...
-func luaPreamble(L *lua.LState, state *FxDataState) int {
-	state.WriteHeader("#pragma once\n\nusing uint24_t = __uint24;\n\n", 0, L)
-	return 0
-}
+// // Write the preamble. Not done by default, in case you don't want it or something...
+// func luaPreamble(L *lua.LState, state *FxDataState) int {
+// 	state.WriteHeader("#pragma once\n\nusing uint24_t = __uint24;\n\n", L)
+// 	return 0
+// }
 
 // Begin a new variable. This writes the variable as the current address
 // to the header, but does not write any data
 func luaField(L *lua.LState, state *FxDataState) int {
 	name := L.ToString(1)
 	addr := state.CurrentAddress()
-	state.WriteHeader(fmt.Sprintf("constexpr uint24_t %s = 0x%0*X;\n", name, 6, addr), 0, L)
+	state.WriteHeader(fmt.Sprintf("constexpr uint24_t %s = 0x%0*X;\n", name, 6, addr), L)
+	L.Push(lua.LNumber(addr))
+	return 1
+}
+
+// A helper function to generate the regular field and the three extra fields
+// for frames, width, and height
+func luaImageField(L *lua.LState, state *FxDataState) int {
+	name := L.ToString(1)
+	frames := L.ToNumber(2)
+	width := L.ToNumber(3)
+	height := L.ToNumber(4)
+	addr := state.CurrentAddress()
+	state.WriteHeader(fmt.Sprintf("constexpr uint24_t %s = 0x%0*X;\n", name, 6, addr), L)
+	state.WriteHeader(fmt.Sprintf("constexpr uint8_t %sFrames = %d;\n", name, frames), L)
+	state.WriteHeader(fmt.Sprintf("constexpr uint16_t %sWidth = %d;\n", name, width), L)
+	state.WriteHeader(fmt.Sprintf("constexpr uint16_t %sHeight = %d;\n", name, height), L)
 	L.Push(lua.LNumber(addr))
 	return 1
 }
@@ -333,24 +435,55 @@ func RunLuaFxGenerator(script string, header io.Writer, bin io.Writer) (*FxOffse
 	defer L.Close()
 
 	L.SetGlobal("file", L.NewFunction(luaFile))
+	L.SetGlobal("image", L.NewFunction(luaImage))
 	L.SetGlobal("hex", L.NewFunction(luaHex))
 	L.SetGlobal("base64", L.NewFunction(luaBase64))
 	L.SetGlobal("json", L.NewFunction(luaJson))
 	L.SetGlobal("bytes", L.NewFunction(luaBytes))
-	state.AddFunction("header", luaHeader, L)
-	state.AddFunction("preamble", luaPreamble, L)
+	state.AddFunction("address", luaAddress, L) // current address
+	state.AddFunction("header", luaHeader, L)   // Write arbitrary header text
+	//state.AddFunction("preamble", luaPreamble, L) // write the preamble
+	//state.AddFunction("postscript", luaPostscript, L)
 	state.AddFunction("write", luaWrite, L)
 	state.AddFunction("pad", luaPad, L)
 	state.AddFunction("field", luaField, L)
+	state.AddFunction("image_field", luaImageField, L)
 	state.AddFunction("begin_save", luaBeginSave, L)
 
-	err := L.DoString(script)
+	// Always write the preamble before the user starts...
+	_, err := io.WriteString(state.Header, "#pragma once\n\nusing uint24_t = __uint24;\n\n")
+	if err != nil {
+		return nil, err
+	}
+
+	err = L.DoString(script)
 	if err != nil {
 		return nil, err
 	}
 
 	// Some final calcs based on how much data we wrote
 	offsets, err := state.FinalizeBin()
+	if err != nil {
+		return nil, err
+	}
+
+	// Some header finalization. Don't make the user write this, it only makes sense after
+	// computing the final offsets.
+	var sb strings.Builder
+
+	sb.WriteString("\n// FX addresses (only really used for initialization)\n")
+	sb.WriteString(MakeFxHeaderMainPointer("FX_DATA", uint(offsets.DataStart), uint(offsets.DataLength)))
+	if max(offsets.SaveLengthFlash) > 0 {
+		sb.WriteString(MakeFxHeaderMainPointer("FX_SAVE", uint(offsets.SaveStart), uint(offsets.SaveLength)))
+	}
+	sb.WriteString("// Helper macro to initialize fx, call in setup()\n")
+	if state.HasSave {
+		sb.WriteString("#define FX_INIT() FX::begin(FX_DATA_PAGE, FX_DATA_SAVE)\n")
+	} else {
+		sb.WriteString("#define FX_INIT() FX::begin(FX_DATA_PAGE)\n")
+	}
+
+	_, err = io.WriteString(state.Header, sb.String())
 	if err != nil {
 		return nil, err
 	}
