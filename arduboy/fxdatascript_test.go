@@ -2,6 +2,7 @@ package arduboy
 
 import (
 	"bytes"
+	"os"
 	"strings"
 	"testing"
 )
@@ -12,7 +13,7 @@ func TestRunLuaFxGenerator_Empty(t *testing.T) {
 	var header bytes.Buffer
 	var bin bytes.Buffer
 
-	_, err := RunLuaFxGenerator(script, &header, &bin)
+	_, err := RunLuaFxGenerator(script, &header, &bin, "")
 	if err != nil {
 		t.Fatalf("Error running basic fx generator: %s", err)
 	}
@@ -37,7 +38,7 @@ func TestRunLuaFxGenerator_SaveOnly(t *testing.T) {
 	var header bytes.Buffer
 	var bin bytes.Buffer
 
-	offsets, err := RunLuaFxGenerator(script, &header, &bin)
+	offsets, err := RunLuaFxGenerator(script, &header, &bin, "")
 	if err != nil {
 		t.Fatalf("Error running saveonly fx generator: %s", err)
 	}
@@ -110,7 +111,7 @@ header("}\n")
 	var header bytes.Buffer
 	var bin bytes.Buffer
 
-	offsets, err := RunLuaFxGenerator(script, &header, &bin)
+	offsets, err := RunLuaFxGenerator(script, &header, &bin, "")
 	if err != nil {
 		t.Fatalf("Error running basic fx generator: %s", err)
 	}
@@ -144,5 +145,65 @@ header("}\n")
 		if strings.Index(headerstr, exp) < 0 {
 			t.Fatalf("Didn't write '%s' in empty header. Header:\n%s", exp, headerstr)
 		}
+	}
+}
+
+func TestRunLuaFxGenerator_Real1(t *testing.T) {
+	script, err := os.ReadFile(fileTestPath("fxdata.lua"))
+	if err != nil {
+		t.Fatalf("Couldn't read fxdata.lua for testing: %s", err)
+	}
+
+	var header bytes.Buffer
+	var bin bytes.Buffer
+	offsets, err := RunLuaFxGenerator(string(script), &header, &bin, testPath())
+
+	if err != nil {
+		t.Fatalf("Couldn't parse Real1 lua script: %s", err)
+	}
+
+	// This is the exact length of the uneven.bin (perhaps programmatically read this?)
+	if offsets.SaveLength != 1031 {
+		t.Fatalf("Expected savelength 1031, got %d", offsets.SaveLength)
+	}
+	if offsets.SaveLengthFlash != FxSaveAlignment {
+		t.Fatalf("Expected flash savelength %d, got %d", FxSaveAlignment, offsets.SaveLengthFlash)
+	}
+	expectedSaveLoc := FxDevExpectedFlashCapacity - FxSaveAlignment
+	if offsets.SaveStart != expectedSaveLoc {
+		t.Fatalf("Expected save location %d, got %d", expectedSaveLoc, offsets.SaveStart)
+	}
+
+	if offsets.DataLength != 1099 {
+		t.Fatalf("Expected datalength 1099, got %d", offsets.DataLength)
+	}
+	if offsets.DataLengthFlash != 1024+FXPageSize {
+		t.Fatalf("Expected flash datalength %d, got %d", 1024+FXPageSize, offsets.DataLengthFlash)
+	}
+	expectedDataLoc := offsets.SaveStart - offsets.DataLengthFlash
+	if offsets.DataStart != expectedDataLoc {
+		t.Fatalf("Expected data location %d, got %d", expectedDataLoc, offsets.DataStart)
+	}
+
+	// now we compare the fx data generated against a known good fxdata for the same
+	// set of... well, data.
+	fxoldgen, err := os.ReadFile(fileTestPath("fxdata.bin"))
+	if err != nil {
+		t.Fatalf("Couldn't read old fxdata: %s", err)
+	}
+
+	bbin := bin.Bytes()
+	if !bytes.Equal(fxoldgen, bbin) {
+		err = os.WriteFile("fxdata_test_error.bin", bbin, 0660)
+		if err != nil {
+			t.Fatalf("Couldn't write error file: %s", err)
+		}
+		difpos := 0
+		for difpos = range min(len(fxoldgen), len(bbin)) {
+			if fxoldgen[difpos] != bbin[difpos] {
+				break
+			}
+		}
+		t.Fatalf("Generated fxdata not the same at index %d! old length %d vs new %d", difpos, len(fxoldgen), len(bbin))
 	}
 }

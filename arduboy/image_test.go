@@ -152,8 +152,12 @@ func TestSplitImageToTiles_SingleImage(t *testing.T) {
 	}
 }
 
+func testPath() string {
+	return filepath.Join("..", "testfiles")
+}
+
 func fileTestPath(filename string) string {
-	return filepath.Join("..", "testfiles", filename)
+	return filepath.Join(testPath(), filename)
 }
 
 func tileTestPath(filename string) string {

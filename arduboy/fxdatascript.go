@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/yuin/gopher-lua"
@@ -24,20 +25,30 @@ type FxDataState struct {
 	SaveStart        int  // Inclusive start
 	HasSave          bool // Whether a save is active for this thing
 	CurrentNamespace string
+	FileDirectory    string
 }
 
 func (state *FxDataState) CurrentAddress() int {
 	return state.BinLength - state.SaveStart
 }
 
+func (state *FxDataState) FilePath(path string) string {
+	if state.FileDirectory == "" {
+		return path
+	}
+	return filepath.Join(state.FileDirectory, path)
+}
+
 func (state *FxDataState) FinalizeBin() (*FxOffsets, error) {
 	var offsets FxOffsets
+	log.Printf("Ending fx data generation. Total length: %d (save: %t)",
+		state.BinLength, state.HasSave)
 	if state.HasSave {
 		// Having a save means padding only the SAVE data to the correct length
 		offsets.DataLength = state.DataEnd
 		offsets.DataLengthFlash = state.SaveStart
 		offsets.SaveLength = state.BinLength - state.SaveStart // This could be 0, that's fine
-		newlength := int(AlignWidth(uint(state.BinLength), uint(FxSaveAlignment)))
+		newlength := state.SaveStart + int(AlignWidth(uint(offsets.SaveLength), uint(FxSaveAlignment)))
 		if offsets.SaveLength == 0 {
 			newlength += FxSaveAlignment // FORCE save if user has begun save at all
 		}
@@ -98,11 +109,18 @@ func (state *FxDataState) AddFunction(name string, f func(*lua.LState, *FxDataSt
 //          READERS
 // -----------------------------
 
+// Return the current address pointed to in the system. Knows whether it's
+// save or data
+func luaAddress(L *lua.LState, state *FxDataState) int {
+	L.Push(lua.LNumber(state.CurrentAddress()))
+	return 1
+}
+
 // Function for lua scripts that lets you read an entire file. Yes, that's already
 // possible in lua, whatever
-func luaFile(L *lua.LState) int {
+func luaFile(L *lua.LState, state *FxDataState) int {
 	filename := L.ToString(1) // First param is the filename
-	bytes, err := os.ReadFile(filename)
+	bytes, err := os.ReadFile(state.FilePath(filename))
 	if err != nil {
 		L.RaiseError("Error reading file %s in lua script: %s", filename, err)
 		return 0
@@ -114,7 +132,7 @@ func luaFile(L *lua.LState) int {
 
 // Generates raw image data, width, height, and frames as return data.
 // The user can do whatever they want with it
-func luaImage(L *lua.LState) int {
+func luaImage(L *lua.LState, state *FxDataState) int {
 
 	// TODO: Make sure you generate a help thing for this!
 	filename := L.ToString(1)
@@ -137,7 +155,7 @@ func luaImage(L *lua.LState) int {
 		alphathresh = 10
 	}
 
-	file, err := os.Open(filename)
+	file, err := os.Open(state.FilePath(filename))
 	if err != nil {
 		L.RaiseError("Error opening image file: %s", err)
 		return 0
@@ -346,20 +364,25 @@ func luaField(L *lua.LState, state *FxDataState) int {
 	return 1
 }
 
-// A helper function to generate the regular field and the three extra fields
-// for frames, width, and height
-func luaImageField(L *lua.LState, state *FxDataState) int {
+// Helper function to write both to the header and the data
+func luaImageHelper(L *lua.LState, state *FxDataState) int {
 	name := L.ToString(1)
-	frames := L.ToNumber(2)
-	width := L.ToNumber(3)
-	height := L.ToNumber(4)
+	data := L.ToString(2)
+	frames := L.ToNumber(3)
+	width := L.ToNumber(4)
+	height := L.ToNumber(5)
 	addr := state.CurrentAddress()
+	// Write all the normal header stuff
 	state.WriteHeader(fmt.Sprintf("constexpr uint24_t %s = 0x%0*X;\n", name, 6, addr), L)
 	state.WriteHeader(fmt.Sprintf("constexpr uint8_t %sFrames = %d;\n", name, frames), L)
 	state.WriteHeader(fmt.Sprintf("constexpr uint16_t %sWidth = %d;\n", name, width), L)
 	state.WriteHeader(fmt.Sprintf("constexpr uint16_t %sHeight = %d;\n", name, height), L)
+	// Write the data
+	count := state.WriteBin([]byte(data), L)
+	// Return both the address AND the length
 	L.Push(lua.LNumber(addr))
-	return 1
+	L.Push(lua.LNumber(count))
+	return 2
 }
 
 // End the data section and begin writting the save section. It's all the same
@@ -395,17 +418,14 @@ func luaWrite(L *lua.LState, state *FxDataState) int {
 func luaPad(L *lua.LState, state *FxDataState) int {
 	align := L.ToInt(1)
 	increase := L.ToBool(2)
-
 	newlength := int(AlignWidth(uint(state.BinLength), uint(align)))
 	if newlength == state.BinLength && increase {
 		newlength += align
 	}
-
 	if newlength > state.BinLength {
 		log.Printf("Padding data to %d alignment: %d -> %d", align, state.BinLength, newlength)
 		state.WriteBin(MakePadding(newlength-state.BinLength), L)
 	}
-
 	return 0
 }
 
@@ -413,36 +433,31 @@ func luaPad(L *lua.LState, state *FxDataState) int {
 //           STATE
 // -----------------------------
 
-// Return the current address pointed to in the system. Knows whether it's
-// save or data
-func luaAddress(L *lua.LState, state *FxDataState) int {
-	L.Push(lua.LNumber(state.CurrentAddress()))
-	return 1
-}
-
 // Run an entire lua script which may write fxdata to the given header and bin files.
-func RunLuaFxGenerator(script string, header io.Writer, bin io.Writer) (*FxOffsets, error) {
+// For files loaded from the script, load them from dir (or send empty string for nothing)
+func RunLuaFxGenerator(script string, header io.Writer, bin io.Writer, dir string) (*FxOffsets, error) {
 	state := FxDataState{
-		Header: header,
-		Bin:    bin,
+		Header:        header,
+		Bin:           bin,
+		FileDirectory: dir,
 	}
 
 	L := lua.NewState()
 	defer L.Close()
 
-	L.SetGlobal("file", L.NewFunction(luaFile))
-	L.SetGlobal("image", L.NewFunction(luaImage))
 	L.SetGlobal("hex", L.NewFunction(luaHex))
 	L.SetGlobal("base64", L.NewFunction(luaBase64))
 	L.SetGlobal("json", L.NewFunction(luaJson))
 	L.SetGlobal("bytes", L.NewFunction(luaBytes))
-	state.AddFunction("address", luaAddress, L)        // current address
-	state.AddFunction("header", luaHeader, L)          // Write arbitrary header text
-	state.AddFunction("field", luaField, L)            // Write header definition for field (begin field)
-	state.AddFunction("image_field", luaImageField, L) // write header stuff for image (begin field)
-	state.AddFunction("write", luaWrite, L)            // Write raw data to bin (no header)
-	state.AddFunction("pad", luaPad, L)                // pad data to given alignment
-	state.AddFunction("begin_save", luaBeginSave, L)   // begin the save section
+	state.AddFunction("file", luaFile, L)
+	state.AddFunction("image", luaImage, L)
+	state.AddFunction("address", luaAddress, L)          // current address
+	state.AddFunction("header", luaHeader, L)            // Write arbitrary header text
+	state.AddFunction("field", luaField, L)              // Write header definition for field (begin field)
+	state.AddFunction("image_helper", luaImageHelper, L) // write header stuff for image (begin field)
+	state.AddFunction("write", luaWrite, L)              // Write raw data to bin (no header)
+	state.AddFunction("pad", luaPad, L)                  // pad data to given alignment
+	state.AddFunction("begin_save", luaBeginSave, L)     // begin the save section
 
 	// Always write the preamble before the user starts...
 	_, err := io.WriteString(state.Header, "#pragma once\n\nusing uint24_t = __uint24;\n\n")
