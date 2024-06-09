@@ -113,12 +113,12 @@ for _, obj in ipairs(objectlayer["objects"]) do
 
 	-- If this is a page sprite, we add it to a special thingy
 	if id == pagesprite then
-		local locationid = tonumber(obj["name"]) -- Throws an exception if bad, which is good
+		local locationid = tonumber(obj["name"]) + 1 -- Throws an exception if bad, which is good
 		table.insert(pages[locationid], mapx)
 		table.insert(pages[locationid], mapy)
 		goto continue
 	elseif id == slendersprite then
-		local locationid = tonumber(obj["name"]) -- Throws an exception if bad, which is good
+		local locationid = tonumber(obj["name"]) + 1 -- Throws an exception if bad, which is good
 		table.insert(slenders[locationid], mapx)
 		table.insert(slenders[locationid], mapy)
 		-- table.insert(slenders[locationid], mapfraction)
@@ -151,6 +151,43 @@ for xo = 0, width - spriteview - 1 do
 	end
 end
 
+-- A function for dumping a double array, where internal arrays are uneven
+-- sized and you want the output to be an offset into one big array. Used
+-- for page and slender locations per "landmark"
+local function dumplocbased(basename, data, numbytes)
+	local raw = {} -- one of the returned
+	local trueraw = {}
+	local indexes = {}
+	for _, darr in ipairs(data) do --pi = do --pi in range(len(data)):
+		if #darr == 0 then
+			goto continue
+		end
+		table.insert(indexes, #raw)
+		-- Write the length of the section first
+		table.insert(raw, math.floor(#darr / numbytes))
+		for _, v in ipairs(darr) do
+			-- I honestly don't know why I have this twice...
+			table.insert(raw, v)
+			table.insert(trueraw, v)
+		end
+		::continue::
+	end
+
+	local truepos = math.floor(#trueraw / numbytes)
+	assert(truepos < 256, "Too many raw locations for indexing with a single byte!")
+	print(string.format("%s positions count: %d", basename, truepos))
+
+	-- For some reason, we put the length first? IDK man...
+	table.insert(trueraw, 1, truepos)
+
+	field(string.format("%s_raw", basename))
+	write(bytes(raw))
+	field(string.format("%s_trueraw", basename))
+	write(bytes(trueraw))
+	field(string.format("%s_offsets", basename))
+	write(bytes(indexes))
+end
+
 -- ------------------------------
 -- Dump the data to the fx
 -- ------------------------------
@@ -161,6 +198,8 @@ field("staticsprites_fx")
 write(bytes(smap))
 
 -- Some complicated thing...
+dumplocbased("pagelocs", pages, 2)
+dumplocbased("slenderlocs", slenders, 2)
 
 -- And then the normal image junk
 image_helper("rotbg", image("rotbg.png"))

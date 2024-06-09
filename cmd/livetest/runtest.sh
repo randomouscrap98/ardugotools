@@ -33,7 +33,7 @@ cd $cwd
 
 # These initial tests have nothing to do with the device
 rm -rf "$idr/fxdata"
-$tbc fxdata generate "$tfs/fxdata.lua" -d "$tfs" -o "$idr/fxdata"
+$tbc fxdata generate "$tfs/slendemake_fx/fxdata.lua" -d "$tfs/slendemake_fx" -o "$idr/fxdata"
 if [ ! -f "$idr/fxdata/fxdata.h" ]; then
 	echo "Expected fxdata.h to exist"
 	exit 1
