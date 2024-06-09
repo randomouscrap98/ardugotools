@@ -10,7 +10,6 @@ import (
 
 	"github.com/alecthomas/kong"
 	"github.com/mazznoer/csscolorparser"
-	"github.com/pelletier/go-toml/v2"
 
 	"github.com/randomouscrap98/ardugotools/arduboy"
 )
@@ -796,7 +795,7 @@ func (c *SplitCodeCmd) Run() error {
 
 // Sketch read command
 type FxDataGenerateCmd struct {
-	Infile    string `arg:"" default:"fxdata.toml" help:"The fxdata file to read from (default: fxdata.toml)"`
+	Infile    string `arg:"" default:"fxdata.lua" help:"The fxdata file to read from (default: fxdata.lua)"`
 	Outfolder string `type:"path" short:"o" help:"Folder to put the generated fxdata (default: fxdata)"`
 	Datadir   string `type:"path" short:"d" help:"Folder where data is located (optional)"`
 	NoRelease bool   `help:"Don't generate the release files"`
@@ -805,16 +804,11 @@ type FxDataGenerateCmd struct {
 func (c *FxDataGenerateCmd) Run() error {
 	// Figure out save location
 	if c.Outfolder == "" {
-		c.Outfolder = "fxdata" //fmt.Sprintf("sketch_%s.hex", FileSafeDateTime())
+		c.Outfolder = "fxdata"
 	}
-	originalDir, err := os.Getwd()
-	fatalIfErr("fxgenerate", "get current directory", err)
-	// Read fxdata toml
-	var fxdata arduboy.FxData
-	rawfxdata, err := os.ReadFile(c.Infile)
+	// Read fxdata lua
+	script, err := os.ReadFile(c.Infile)
 	fatalIfErr("fxgenerate", "read fxdata file", err)
-	err = toml.Unmarshal(rawfxdata, &fxdata)
-	fatalIfErr("fxgenerate", "parse fxdata file", err)
 	releasePath := filepath.Join(c.Outfolder, "release")
 	// Pre-generate the output structure
 	if c.NoRelease {
@@ -832,15 +826,9 @@ func (c *FxDataGenerateCmd) Run() error {
 	dfile, err := os.Create(devPath)
 	fatalIfErr("fxgenerate", "create output dev binary", err)
 	defer dfile.Close()
-	if c.Datadir != "" {
-		err = os.Chdir(c.Datadir)
-		fatalIfErr("fxgenerate", "change to data dir", err)
-	}
 	// Actually generate the data. This is just the dev data though
-	parseresult, err := arduboy.ParseFxData(&fxdata, hfile, dfile)
+	parseresult, err := arduboy.RunLuaFxGenerator(string(script), hfile, dfile, c.Datadir)
 	fatalIfErr("fxgenerate", "generate data", err)
-	err = os.Chdir(originalDir)
-	fatalIfErr("fxgenerate", "change back to original dir", err)
 	result := make(map[string]interface{})
 	if !c.NoRelease {
 		// Now that we know the start of the save (if it's there), we can
@@ -910,7 +898,7 @@ var cli struct {
 		SplitCode SplitCodeCmd `cmd:"" help:"Split image, generate code" name:"splitcode"`
 	} `cmd:"" help:"Commands which work directly on images, such as titles or spritesheets"`
 	Fxdata struct {
-		Generate FxDataGenerateCmd `cmd:"" help:"Generate fxdata headers and binaries from an fxdata config"`
+		Generate FxDataGenerateCmd `cmd:"" help:"Generate fxdata headers and binaries from an fxdata config (lua)"`
 	} `cmd:"" help:"Commands for working with fxdata (such as generating fxdata)"`
 	Version kong.VersionFlag `help:"Show version information"`
 	Norgb   bool             `help:"Disable all rgb while accessing device"`
