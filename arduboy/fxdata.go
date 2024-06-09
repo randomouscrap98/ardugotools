@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/yuin/gopher-lua"
 )
@@ -412,9 +413,10 @@ func luaImageHelper(L *lua.LState, state *FxDataState) int {
 	height := L.ToNumber(5)
 	addr := state.CurrentAddress()
 	// Write all the normal header stuff
-	state.WriteHeader(fmt.Sprintf("constexpr uint24_t %s = 0x%0*X;\n", name, 6, addr), L)
-	state.WriteHeader(fmt.Sprintf("constexpr uint8_t %sFrames = %d;\n", name, frames), L)
-	state.WriteHeader(fmt.Sprintf("constexpr uint16_t %sWidth = %d;\n", name, width), L)
+	state.WriteHeader(fmt.Sprintf("// Image info for \"%s\"\n", name), L)
+	state.WriteHeader(fmt.Sprintf("constexpr uint24_t %s       = 0x%0*X;\n", name, 6, addr), L)
+	state.WriteHeader(fmt.Sprintf("constexpr uint8_t  %sFrames = %d;\n", name, frames), L)
+	state.WriteHeader(fmt.Sprintf("constexpr uint16_t %sWidth  = %d;\n", name, width), L)
 	state.WriteHeader(fmt.Sprintf("constexpr uint16_t %sHeight = %d;\n", name, height), L)
 	// Write the data
 	count := state.WriteBin([]byte(data), L)
@@ -499,7 +501,13 @@ func RunLuaFxGenerator(script string, header io.Writer, bin io.Writer, dir strin
 	state.AddFunction("begin_save", luaBeginSave, L)     // begin the save section
 
 	// Always write the preamble before the user starts...
-	_, err := io.WriteString(state.Header, "#pragma once\n\nusing uint24_t = __uint24;\n\n")
+	_, err := io.WriteString(state.Header, fmt.Sprintf(`#pragma once
+
+using uint24_t = __uint24;
+
+// Generated with ardugotools on %s
+
+`, time.Now().Format(time.RFC3339)))
 	if err != nil {
 		return nil, err
 	}

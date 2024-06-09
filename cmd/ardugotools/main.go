@@ -873,6 +873,9 @@ func (c *FxDataAlignCmd) Run() error {
 	if c.Outfile == "" {
 		c.Outfile = fmt.Sprintf("fxdata_aligned_%s.bin", FileSafeDateTime())
 	}
+	if c.Datafile == "" && c.Savefile == "" {
+		log.Fatalf("Must provide either data or save file!\n")
+	}
 	// Try to open output file for writing
 	file, err := os.Create(c.Outfile)
 	fatalIfErr("fxalign", "create output file", err)
