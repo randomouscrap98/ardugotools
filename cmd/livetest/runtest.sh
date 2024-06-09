@@ -32,25 +32,52 @@ go build -o $tb
 cd $cwd
 
 # These initial tests have nothing to do with the device
-rm -rf "$idr/fxdata"
-$tbc fxdata generate "$tfs/slendemake_fx/fxdata.lua" -d "$tfs/slendemake_fx" -o "$idr/fxdata"
-if [ ! -f "$idr/fxdata/fxdata.h" ]; then
+ofolder="$idr/fxdata"
+rm -rf "$ofolder"
+$tbc fxdata generate "$tfs/slendemake_fx/fxdata.lua" -d "$tfs/slendemake_fx" -o "$ofolder"
+if [ ! -f "$ofolder/fxdata.h" ]; then
 	echo "Expected fxdata.h to exist"
 	exit 1
 fi
-if [ ! -f "$idr/fxdata/fxdata_dev.bin" ]; then
+if [ ! -f "$ofolder/fxdata_dev.bin" ]; then
 	echo "Expected fxdata_dev.bin to exist"
 	exit 1
 fi
-if [ ! -f "$idr/fxdata/release/fxdata.bin" ]; then
+if [ ! -f "$ofolder/release/fxdata.bin" ]; then
 	echo "Expected release/fxdata.bin to exist"
 	exit 1
 fi
-if [ ! -f "$idr/fxdata/release/fxsave.bin" ]; then
+if [ -f "$ofolder/release/fxsave.bin" ]; then
+	echo "Expected no release/fxsave.bin to exist"
+	exit 1
+fi
+diff "$ofolder/fxdata_dev.bin" "$tfs/slendemake_fx/fxdata.bin"
+
+ofolder="$idr/fxdata2"
+rm -rf "$ofolder"
+$tbc fxdata generate "$tfs/fxdata.lua" -d "$tfs" -o "$ofolder"
+if [ ! -f "$ofolder/fxdata.h" ]; then
+	echo "Expected fxdata.h to exist"
+	exit 1
+fi
+if [ ! -f "$ofolder/fxdata_dev.bin" ]; then
+	echo "Expected fxdata_dev.bin to exist"
+	exit 1
+fi
+if [ ! -f "$ofolder/release/fxdata.bin" ]; then
+	echo "Expected release/fxdata.bin to exist"
+	exit 1
+fi
+if [ ! -f "$ofolder/release/fxsave.bin" ]; then
 	echo "Expected release/fxsave.bin to exist"
 	exit 1
 fi
-diff "$idr/fxdata/fxdata_dev.bin" "$tfs/slendemake_fx/fxdata.bin"
+
+# Now that we know some files exist, let's see if combining them again will
+# yield the same file as the dev file
+$tbc fxdata align -d "$ofolder/release/fxdata.bin" -s "$ofolder/release/fxsave.bin" \
+	-o "$ofolder/release/fxdata_combined.bin"
+diff "$ofolder/fxdata_dev.bin" "$ofolder/release/fxdata_combined.bin"
 
 # Start running some tests. You MUST have an arduboy connected!
 $tbc device scan | jq -e 'type=="array" and length==1'

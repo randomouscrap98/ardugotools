@@ -834,27 +834,86 @@ func (c *FxDataGenerateCmd) Run() error {
 		// Now that we know the start of the save (if it's there), we can
 		// generate the release data and save files
 		dataPath := filepath.Join(releasePath, "fxdata.bin")
-		savePath := filepath.Join(releasePath, "fxsave.bin")
 		datfile, err := os.Create(dataPath)
 		fatalIfErr("fxgenerate", "create output release data", err)
 		defer datfile.Close()
-		savfile, err := os.Create(savePath)
-		fatalIfErr("fxgenerate", "create output release save", err)
-		defer savfile.Close()
 		_, err = dfile.Seek(0, io.SeekStart)
 		fatalIfErr("fxgenerate", "re-read data file", err)
 		_, err = io.CopyN(datfile, dfile, int64(parseresult.DataLengthFlash))
 		fatalIfErr("fxgenerate", "copy release data", err)
-		_, err = io.Copy(savfile, dfile)
-		fatalIfErr("fxgenerate", "copy save data", err)
 		result["FxDataReleaseBinFile"] = dataPath
-		result["FxDataReleaseSaveFile"] = savePath
+		// Don't generate fxsave for things that have none!
+		if parseresult.SaveLengthFlash > 0 {
+			savePath := filepath.Join(releasePath, "fxsave.bin")
+			savfile, err := os.Create(savePath)
+			fatalIfErr("fxgenerate", "create output release save", err)
+			defer savfile.Close()
+			_, err = io.Copy(savfile, dfile)
+			fatalIfErr("fxgenerate", "copy save data", err)
+			result["FxDataReleaseSaveFile"] = savePath
+		}
 	}
 	result["FxDataFile"] = c.Infile
 	result["FxDataOutputfolder"] = c.Outfolder
 	result["FxDataHeaderFile"] = headerPath
 	result["FxDataDevBinFile"] = devPath
 	result["Result"] = parseresult
+	PrintJson(result)
+	return nil
+}
+
+type FxDataAlignCmd struct {
+	Datafile string `type:"existingfile" short:"d" help:"Fx DATA binary to align + combine"`
+	Savefile string `type:"existingfile" short:"s" help:"Fx SAVE binary to align + combine"`
+	Outfile  string `type:"path" short:"o" help:"Where to save the aligned fxdata"`
+}
+
+func (c *FxDataAlignCmd) Run() error {
+	// Figure out save location
+	if c.Outfile == "" {
+		c.Outfile = fmt.Sprintf("fxdata_aligned_%s.bin", FileSafeDateTime())
+	}
+	// Try to open output file for writing
+	file, err := os.Create(c.Outfile)
+	fatalIfErr("fxalign", "create output file", err)
+	defer file.Close()
+	result := make(map[string]interface{})
+	totalwritten := 0
+	// If there's a designated data file, write that along with padding
+	if c.Datafile != "" {
+		result["FxDataFile"] = c.Datafile
+		dfile, err := os.Open(c.Datafile)
+		fatalIfErr("fxalign", "open data file", err)
+		defer dfile.Close()
+		written, err := io.Copy(file, dfile)
+		fatalIfErr("fxalign", "copy data file", err)
+		log.Printf("Copied fx data file %s to outfile %s\n", c.Datafile, c.Outfile)
+		align := arduboy.AlignWidth(uint(written), uint(arduboy.FXPageSize))
+		padding, err := file.Write(arduboy.MakePadding(int(align - uint(written))))
+		fatalIfErr("fxalign", "align data file", err)
+		log.Printf("Wrote %d data alignment bytes", padding)
+		result["DataPadding"] = padding
+		totalwritten += int(written) + padding
+	}
+	// And just like with the data, write save if provided
+	if c.Savefile != "" {
+		result["FxSaveFile"] = c.Savefile
+		sfile, err := os.Open(c.Savefile)
+		fatalIfErr("fxalign", "open save file", err)
+		defer sfile.Close()
+		written, err := io.Copy(file, sfile)
+		fatalIfErr("fxalign", "copy save file", err)
+		log.Printf("Copied fx save file %s to outfile %s\n", c.Savefile, c.Outfile)
+		align := arduboy.AlignWidth(uint(written), uint(arduboy.FxSaveAlignment))
+		padding, err := file.Write(arduboy.MakePadding(int(align - uint(written))))
+		fatalIfErr("fxalign", "align save file", err)
+		log.Printf("Wrote %d save alignment bytes", padding)
+		result["SavePadding"] = padding
+		totalwritten += int(written) + padding
+	}
+	// We're done?
+	result["FxAlignFile"] = c.Outfile
+	result["FileLength"] = totalwritten
 	PrintJson(result)
 	return nil
 }
@@ -899,6 +958,7 @@ var cli struct {
 	} `cmd:"" help:"Commands which work directly on images, such as titles or spritesheets"`
 	Fxdata struct {
 		Generate FxDataGenerateCmd `cmd:"" help:"Generate fxdata headers and binaries from an fxdata config (lua)"`
+		Align    FxDataAlignCmd    `cmd:"" help:"Align fxdata, optionally appending fxsave for use in flashcart writedev"`
 	} `cmd:"" help:"Commands for working with fxdata (such as generating fxdata)"`
 	Version kong.VersionFlag `help:"Show version information"`
 	Norgb   bool             `help:"Disable all rgb while accessing device"`
