@@ -50,6 +50,7 @@ if [ ! -f "$idr/fxdata/release/fxsave.bin" ]; then
 	echo "Expected release/fxsave.bin to exist"
 	exit 1
 fi
+diff "$idr/fxdata/fxdata_dev.bin" "$tfs/slendemake_fx/fxdata.bin"
 
 # Start running some tests. You MUST have an arduboy connected!
 $tbc device scan | jq -e 'type=="array" and length==1'
