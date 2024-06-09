@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	AppVersion = "0.4.0"
+	AppVersion = "0.5.0"
 )
 
 // Quick way to fail on error, since most commands are "doing" something on

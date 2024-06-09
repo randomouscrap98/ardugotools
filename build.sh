@@ -9,12 +9,16 @@ cd ../cmd/ardugotools
 build() {
 	builddir="$cwd/build/${1}_${2}"
 	mkdir -p $builddir
-	GOOS=$1 GOARCH=$2 GO386=softfloat go build -o $builddir/ardugotools
+	exename=ardugotools
+	if [ "$1" = "windows" ]; then
+		exename=ardugotools.exe
+	fi
+	GOOS=$1 GOARCH=$2 GO386=softfloat go build -o $builddir/$exename
 	echo "Compiled $builddir"
 
 	distdir="$cwd/dist"
 	mkdir -p $distdir
-	zip $distdir/ardugotools_${1}_${2}.zip $builddir/ardugotools
+	zip $distdir/ardugotools_${1}_${2}.zip $builddir/$exename
 }
 
 build windows amd64
