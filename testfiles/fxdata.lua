@@ -77,7 +77,7 @@
 
 --- Begin file
 
-image_helper("sritesheet", image("spritesheet.png", 0, 0, 0, true))
+image_helper("spritesheet", image("spritesheet.png", 0, 0, 0, true))
 
 field("myhex")
 write(hex("000102030405060708090A0B0C0D0E0F10"))

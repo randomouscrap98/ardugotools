@@ -24,7 +24,7 @@ cwd=$(pwd)
 tb="$cwd/testbin"
 tbc="$tb"
 tfs="$cwd/../../testfiles"
-efs="$cwd/../../examples"
+# efs="$cwd/../../examples"
 
 # Build the thing
 cd ../ardugotools
@@ -33,7 +33,7 @@ cd $cwd
 
 # These initial tests have nothing to do with the device
 rm -rf "$idr/fxdata"
-$tbc fxdata generate "$efs/fxdata.toml" -d "$tfs" -o "$idr/fxdata"
+$tbc fxdata generate "$tfs/fxdata.lua" -d "$tfs" -o "$idr/fxdata"
 if [ ! -f "$idr/fxdata/fxdata.h" ]; then
 	echo "Expected fxdata.h to exist"
 	exit 1

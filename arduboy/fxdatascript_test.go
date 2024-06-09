@@ -206,4 +206,23 @@ func TestRunLuaFxGenerator_Real1(t *testing.T) {
 		}
 		t.Fatalf("Generated fxdata not the same at index %d! old length %d vs new %d", difpos, len(fxoldgen), len(bbin))
 	}
+
+	headerstr := string(header.Bytes())
+	expected := []string{
+		"#pragma once",
+		"FX_DATA_PAGE",
+		"FX_DATA_BYTES",
+		"FX_SAVE_PAGE",
+		"FX_SAVE_BYTES",
+		"FX::begin(FX_DATA_PAGE, FX_DATA_SAVE)",
+		"uint24_t spritesheet",
+		"spritesheetFrames",
+		"spritesheetWidth",
+		"spritesheetHeight",
+	}
+	for _, exp := range expected {
+		if strings.Index(headerstr, exp) < 0 {
+			t.Fatalf("Didn't write '%s' in real1 header. Header:\n%s", exp, headerstr)
+		}
+	}
 }
