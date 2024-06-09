@@ -4,17 +4,16 @@ A simple, single-binary CLI toolset for Arduboy. Runs on many systems
 
 ## Features
 
-- Scan for connected devices
-- Analyze connected devices
-- Read sketch, eeprom, flashcart
-- Write sketch, eeprom, flashcart
+- Scan / analyze for connected devices
+- Read / write sketch, eeprom, flashcart
 - Write raw hex (useful for arbitrary flashing)
 - Scan / parse flashcart (on device or filesystem)
 - Convert between sketch hex/bin and back
 - Convert title images to bin and back
-- Write FX dev data
+- Write / align FX dev data
 - Read and write arbitrary flashcart data at any location (useful for unique flashcart formats or custom updates)
 - Convert spritesheet or images to code + split to individual images
+- Generate FX data, saves, and headers using powerful lua configuration
 
 (More to come)
 
@@ -58,3 +57,24 @@ Choose one of two methods:
   - Download one of the binaries, put it wherever you want
   - Run it locally with something like `./ardugotools` or on Windows `ardugotools.exe`. This is the easiest way: you can just copy the file into your projects and run it like that
   - To run it from anywhere, put the path to the downloaded file into your `PATH` variable
+
+## FX data generation
+
+In order to utilize the FX external flash chip in the Arduboy, you would generally write
+an `fxdata.txt` configuration file, which describes the layout of the data and save. You
+would use the [python scripts](https://github.com/MrBlinky/Arduboy-Python-Utilities) to 
+generate a header, data binary, and optionally save binary. However, I found that the format
+of `fxdata.txt` was difficult to parse, and didn't give me the flexibility I desired. Most
+people end up writing scripts to generate the intermediate configuration, which is then
+used to generate the FX header and data.
+
+Ardugotools attempts to shortcut this process by replacing `fxdata.txt` with `lua` scripting.
+This way, you can script your data generation but then immediately write the FX
+headers and data without an intermediate step. 
+
+### Examples
+
+There are a few example lua scripts. Please see [fxdata.lua](testfiles/fxdata.lua) for a 
+thorough rundown of all the available functions as well as a small example. For a far
+more complicated example, see the [slendemake script](testfiles/slendemake_fx/fxdata.lua).
+
