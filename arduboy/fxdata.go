@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/yuin/gopher-lua"
+	lua "github.com/yuin/gopher-lua"
 )
 
 const (
@@ -171,10 +171,12 @@ func luaFile(L *lua.LState, state *FxDataState) int {
 }
 
 // Generates raw image data, width, height, and frames as return data.
-// The user can do whatever they want with it
+// The user can do whatever they want with it. If you pass true as the last
+// element, you will shortcut the result and only produce tiles of raw
+// palette information (0 to 2, with 0 being transparent) rather than immediately
+// writable data
 func luaImage(L *lua.LState, state *FxDataState) int {
 
-	// TODO: Make sure you generate a help thing for this!
 	filename := L.ToString(1)
 	width := L.ToInt(2)       // Width of tile (0 means use all available width)
 	height := L.ToInt(3)      // Height of tile (0 means use all available height)
@@ -182,6 +184,7 @@ func luaImage(L *lua.LState, state *FxDataState) int {
 	usemask := L.ToBool(5)    // Whether to use transparency as a data mask
 	threshold := L.ToInt(6)   // The upper bound for black pixels
 	alphathresh := L.ToInt(7) // The upper bound for alpha threshold
+	skipconvert := L.ToBool(8)
 
 	// Validation and/or setting the defaults if not set
 	if filename == "" {
@@ -213,41 +216,55 @@ func luaImage(L *lua.LState, state *FxDataState) int {
 		return 0
 	}
 
-	// Buffer for the whole data, as in the entire thing for images.
-	// We don't check for errors here because... well, CAN an in-memory
-	// buffer throw errors? I'd be surprised...
-	var buf bytes.Buffer
-	onebyte := make([]byte, 1)
+	// Convert each to paletted. Depending on what the user wants, this may be all we do
+	ptiles := make([][]byte, len(tiles))
+	for i, tile := range tiles {
+		ptiles[i], _, _ = ImageToPaletted(tile, uint8(threshold), uint8(alphathresh))
+	}
 
 	// Need to write the width and height as 2 byte fields
-	preamble := make([]byte, 4)
-	Write2ByteValue(uint16(computed.SpriteWidth), preamble, 0)
-	Write2ByteValue(uint16(computed.SpriteHeight), preamble, 2)
-	buf.Write(preamble)
+	if !skipconvert {
+		// Buffer for the whole data, as in the entire thing for images.
+		// We don't check for errors here because... well, CAN an in-memory
+		// buffer throw errors? I'd be surprised...
+		var buf bytes.Buffer
+		onebyte := make([]byte, 1)
 
-	// Now write all the tiles
-	for i, tile := range tiles {
-		ptile, w, h := ImageToPaletted(tile, uint8(threshold), uint8(alphathresh))
-		raw, mask, err := PalettedToRaw(ptile, w, h)
-		if err != nil {
-			L.RaiseError("Can't convert tile %d to raw: %s", i, err)
-			return 0
-		}
-		for i := range raw {
-			onebyte[0] = raw[i]
-			buf.Write(onebyte)
-			if usemask {
-				onebyte[0] = mask[i]
+		preamble := make([]byte, 4)
+		Write2ByteValue(uint16(computed.SpriteWidth), preamble, 0)
+		Write2ByteValue(uint16(computed.SpriteHeight), preamble, 2)
+		buf.Write(preamble)
+
+		// Now write all the tiles
+		for i, ptile := range ptiles {
+			raw, mask, err := PalettedToRaw(ptile, computed.SpriteWidth, computed.SpriteHeight)
+			if err != nil {
+				L.RaiseError("Can't convert tile %d to raw: %s", i, err)
+				return 0
+			}
+			for i := range raw {
+				onebyte[0] = raw[i]
 				buf.Write(onebyte)
+				if usemask {
+					onebyte[0] = mask[i]
+					buf.Write(onebyte)
+				}
 			}
 		}
-	}
-	bytes := buf.Bytes()
-	log.Printf("Converted image '%s' to %d tiles of %d width, %d height (%d bytes)",
-		filename, len(tiles), computed.SpriteWidth, computed.SpriteHeight, len(bytes))
+		bytes := buf.Bytes()
+		log.Printf("Converted image '%s' to %d tiles of %d width, %d height (%d bytes)",
+			filename, len(tiles), computed.SpriteWidth, computed.SpriteHeight, len(bytes))
 
-	// TODO: document the return types!!!
-	L.Push(lua.LString(string(bytes)))         // Actual raw data
+		L.Push(lua.LString(string(bytes))) // Actual raw data
+	} else {
+		// Here, we just return the raw tiles. Should be fine... I think
+		luaTable := L.NewTable()
+		for _, str := range ptiles {
+			luaTable.Append(lua.LString(string(str)))
+		}
+		L.Push(luaTable)
+	}
+
 	L.Push(lua.LNumber(len(tiles)))            // amount of tiles
 	L.Push(lua.LNumber(computed.SpriteWidth))  // individual sprite width
 	L.Push(lua.LNumber(computed.SpriteHeight)) // individual sprite height
