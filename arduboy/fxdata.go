@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"strings"
@@ -425,9 +426,9 @@ func luaField(L *lua.LState, state *FxDataState) int {
 func luaImageHelper(L *lua.LState, state *FxDataState) int {
 	name := L.ToString(1)
 	data := L.ToString(2)
-	frames := L.ToNumber(3)
-	width := L.ToNumber(4)
-	height := L.ToNumber(5)
+	frames := L.ToInt(3)
+	width := L.ToInt(4)
+	height := L.ToInt(5)
 	addr := state.CurrentAddress()
 	// Write all the normal header stuff
 	state.WriteHeader(fmt.Sprintf("// Image info for \"%s\"\n", name), L)
@@ -441,6 +442,105 @@ func luaImageHelper(L *lua.LState, state *FxDataState) int {
 	L.Push(lua.LNumber(addr))
 	L.Push(lua.LNumber(count))
 	return 2
+}
+
+// Helper function which accepts the output of image() (in raw tile mode) and writes all the required
+// data/fields for use with the raycaster. If width/height is not 32, currently it throws an error
+func luaRaycastHelper(L *lua.LState, state *FxDataState) int {
+	name := L.ToString(1)
+	usemask := L.ToBool(2)
+	data := L.ToTable(3)
+	frames := L.ToInt(4)
+	width := L.ToInt(5)
+	height := L.ToInt(6)
+
+	if width != 32 || height != 32 {
+		L.RaiseError("Width and height must be 32 for raycast engine!")
+		return 0
+	}
+	if data == nil {
+		L.RaiseError("Must pass table of tiles as third argument!")
+		return 0
+	}
+
+	addr := state.CurrentAddress()
+
+	// Precalc sizes of mipmaps. This is both to have a comment showing the offsets and to calculate the correct mask location
+	mmsizes := make([]uint8, 8)
+	var mmstripelength uint8
+	for i := 1; i <= 8; i++ {
+		mmsizes[i-1] = uint8(math.Ceil(float64(width) / float64(i) / 8.0))
+		mmstripelength += mmsizes[i-1]
+	}
+
+	state.WriteHeader(fmt.Sprintf("// Image info for \"%s\"\n", name), L)
+	state.WriteHeader("// NOTE: offsets for raycast stripes are: ", L)
+	for _, o := range mmsizes {
+		state.WriteHeader(fmt.Sprintf("%d, ", o), L)
+	}
+	state.WriteHeader(fmt.Sprintf(" => %d\n", mmstripelength), L)
+	state.WriteHeader(fmt.Sprintf("constexpr uint24_t %s       = 0x%0*X;\n", name, 6, addr), L)
+	if usemask {
+		maskaddr := addr + frames*32*int(mmstripelength) // We calculated each frame's stripe size in bytes
+		state.WriteHeader(fmt.Sprintf("constexpr uint24_t %sMask   = 0x%0*X;\n", name, 6, maskaddr), L)
+	}
+	state.WriteHeader(fmt.Sprintf("constexpr uint8_t  %sFrames = %d;\n", name, frames), L)
+	state.WriteHeader(fmt.Sprintf("constexpr uint16_t %sWidth  = %d;\n", name, width), L)
+	state.WriteHeader(fmt.Sprintf("constexpr uint16_t %sHeight = %d;\n", name, height), L)
+
+	var framebuf bytes.Buffer
+	var maskbuf bytes.Buffer
+	written := 0
+
+	// Split frame into a weird amalgamation
+	for i := 1; i <= frames; i++ {
+		lv := data.RawGetInt(i)
+		if frame, ok := lv.(lua.LString); ok {
+			// We iterate over every VERTICAL stripe
+			for vso := 0; vso < width; vso++ {
+				var stripe uint32
+				var stripemask uint32
+				var bit uint32 = 1
+				// Iterate over the pixels of a vertical stripe of the frame
+				for vsi := vso; vsi < width*height; vsi += width {
+					// Set bits accordingly. This is NOT the normal arduboy image format, it's a special
+					// format made specifically for raycasting (stored as whole vertical stripes; mipmapped)
+					if frame[vsi] == 1 {
+						stripe |= bit
+					} else if frame[vsi] == 2 {
+						stripemask |= bit
+					}
+					bit <<= 1
+				}
+				// Now condense the stripe into smaller and smaller items. First iteration
+				// SHOULD yield the exact expected frame
+				for step := 1; step <= 8; step++ {
+					var stripevalue uint32
+					var maskvalue uint32
+					// This is the part we DON'T want to do on arduboy, so we precalc it. FX is huge, it's fine
+					for bit := 0; bit < width; bit += step {
+						stripevalue |= 1 & (stripe >> bit)
+						maskvalue |= 1 & (stripemask >> bit)
+					}
+					// Now, given the byte size, store the two things.
+				}
+			}
+		} else {
+			L.RaiseError("Tile %d was not bytes (string)!", i)
+			return 0
+		}
+	}
+
+	written += state.WriteBin(framebuf.Bytes(), L)
+	if usemask {
+		written += state.WriteBin(maskbuf.Bytes(), L)
+	}
+
+	// Return both the address AND the length
+	L.Push(lua.LNumber(addr))
+	L.Push(lua.LNumber(written))
+
+	return 1
 }
 
 // End the data section and begin writting the save section. It's all the same
