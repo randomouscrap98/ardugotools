@@ -165,13 +165,18 @@ header("// Raycast bytes written2: " .. written .. "\n")
 		t.Fatalf("Error running basic fx generator: %s", err)
 	}
 
-	expectedDataLength := 416 * 4 * 3
+	headerstr := header.String()
+	fxd := bin.Bytes()
+
+	var maxmipmap int
+	var mipmapbytes int
+	mmloc := strings.Index(headerstr, "mipmaps,")
+	fmt.Sscanf(headerstr[mmloc:], "mipmaps, %d %d", &maxmipmap, &mipmapbytes)
+
+	expectedDataLength := maxmipmap * mipmapbytes * 4 * 3
 	if offsets.DataLength != expectedDataLength {
 		t.Fatalf("Expected DataLength=%d, got %d", expectedDataLength, offsets.DataLength)
 	}
-
-	headerstr := header.String()
-	fxd := bin.Bytes()
 
 	expectedheaders := []string{
 		"constexpr uint24_t spritesheet",
@@ -183,8 +188,8 @@ header("// Raycast bytes written2: " .. written .. "\n")
 		"sprootsheetHeight = 32",
 		"sprootsheetFrames = 4",
 		"constexpr uint24_t sprootsheet",
-		fmt.Sprintf("Raycast bytes written: %d", 416*4*2),
-		fmt.Sprintf("Raycast bytes written2: %d", 416*4),
+		fmt.Sprintf("Raycast bytes written: %d", maxmipmap*mipmapbytes*4*2),
+		fmt.Sprintf("Raycast bytes written2: %d", maxmipmap*mipmapbytes*4),
 	}
 	for _, exp := range expectedheaders {
 		if !strings.Contains(headerstr, exp) {

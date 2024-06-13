@@ -456,10 +456,10 @@ func luaRaycastHelper(L *lua.LState, state *FxDataState) int {
 	width := L.ToInt(5)
 	height := L.ToInt(6)
 
-	if width != 32 || height != 32 {
-		L.RaiseError("Width and height must be 32 for raycast engine!")
-		return 0
-	}
+	// if width != 32 || height != 32 {
+	// 	L.RaiseError("Width and height must be 32 for raycast engine!")
+	// 	return 0
+	// }
 	if data == nil {
 		L.RaiseError("Must pass table of tiles as third argument!")
 		return 0
@@ -467,20 +467,25 @@ func luaRaycastHelper(L *lua.LState, state *FxDataState) int {
 
 	addr := state.CurrentAddress()
 
+	// Not sure if this is permanent yet, but these are the mipmap levels we generate
+	mipmaps := []int{32, 16, 8, 4}
+	mmstripelength := 8
+
 	// Precalc sizes of mipmaps. This is both to have a comment showing the offsets and to calculate the correct mask location
-	mmsizes := make([]uint8, 8)
-	var mmstripelength uint8
-	for i := 1; i <= 8; i++ {
-		mmsizes[i-1] = uint8(math.Ceil(float64(width) / float64(i) / 8.0))
-		mmstripelength += mmsizes[i-1]
-	}
+	// mmsizes := make([]uint8, 8)
+	// var mmstripelength uint8
+	// for i := 1; i <= 8; i++ {
+	// 	mmsizes[i-1] = uint8(math.Ceil(float64(width) / float64(i) / 8.0))
+	// 	mmstripelength += mmsizes[i-1]
+	// }
 
 	state.WriteHeader(fmt.Sprintf("// Image info for \"%s\"\n", name), L)
-	state.WriteHeader("// NOTE: offsets for raycast stripes are: ", L)
-	for _, o := range mmsizes {
-		state.WriteHeader(fmt.Sprintf("%d, ", o), L)
-	}
-	state.WriteHeader(fmt.Sprintf(" => %d\n", mmstripelength), L)
+	state.WriteHeader(fmt.Sprintf("// NOTE: raycast tiles stored as mipmaps, %d %d byte strips per tile\n", mipmaps[0], mmstripelength), L)
+	// state.WriteHeader("// NOTE: offsets for raycast stripes are: ", L)
+	// for _, o := range mmsizes {
+	// 	state.WriteHeader(fmt.Sprintf("%d, ", o), L)
+	// }
+	// state.WriteHeader(fmt.Sprintf(" => %d\n", mmstripelength), L)
 	state.WriteHeader(fmt.Sprintf("constexpr uint24_t %s       = 0x%0*X;\n", name, 6, addr), L)
 	if usemask {
 		maskaddr := addr + frames*32*int(mmstripelength) // We calculated each frame's stripe size in bytes
@@ -495,54 +500,53 @@ func luaRaycastHelper(L *lua.LState, state *FxDataState) int {
 	written := 0
 
 	// Split frame into a weird amalgamation
-	for i := 1; i <= frames; i++ {
-		lv := data.RawGetInt(i)
+	for fi := 1; fi <= frames; fi++ {
+		lv := data.RawGetInt(fi)
 		if frame, ok := lv.(lua.LString); ok {
 			fdat := []byte(string(frame))
 			// We iterate over every VERTICAL stripe
 			for vso := 0; vso < width; vso++ {
-				var stripe uint32
-				var stripemask uint32
+				var framevert uint32
+				var framemask uint32
 				var bit uint32 = 1
 				// Iterate over the pixels of a vertical stripe of the frame
 				for vsi := vso; vsi < width*height; vsi += width {
 					// Set bits accordingly. This is NOT the normal arduboy image format, it's a special
 					// format made specifically for raycasting (stored as whole vertical stripes; mipmapped)
 					if fdat[vsi] < 2 {
-						stripemask |= bit
+						framemask |= bit
 						if fdat[vsi] == 1 {
-							stripe |= bit
+							framevert |= bit
 						}
 					}
 					bit <<= 1
 				}
-				// Now condense the stripe into smaller and smaller items. First iteration
-				// SHOULD yield the exact expected frame
-				for step := 1; step <= 8; step++ {
-					var stripevalue uint32
-					var maskvalue uint32
+				// Iterate over mipmaps and generate special "stripes" with the mipmap data stored inside
+				for _, mipmap := range mipmaps {
+					var mipmapvert uint32
+					var mipmapmask uint32
 					bit = 1
-					// This is the part we DON'T want to do on arduboy, so we precalc it. FX is huge, it's fine
-					for b := 0; b < height; b += step {
-						if (1 & (stripe >> b)) == 1 {
-							stripevalue |= bit
+					for i := 0; i < mipmap; i++ {
+						vertofs := int(math.Floor(0.5 + float64((width-1)*i/(mipmap-1))))
+						if (1 & (framevert >> vertofs)) == 1 {
+							mipmapvert |= bit
 						}
-						if (1 & (stripemask >> b)) == 1 {
-							maskvalue |= bit
+						if (1 & (framemask >> vertofs)) == 1 {
+							mipmapmask |= bit
 						}
 						bit <<= 1
 					}
 					// Now, given the byte size, store the two things.
-					for b := 0; b < int(mmsizes[step-1]); b++ {
-						framebuf.WriteByte(byte(stripevalue & 0xFF))
-						maskbuf.WriteByte(byte(maskvalue & 0xFF))
-						stripevalue >>= 8
-						maskvalue >>= 8
+					for b := 0; b < max(1, mipmap/8); b++ {
+						framebuf.WriteByte(byte(mipmapvert & 0xFF))
+						maskbuf.WriteByte(byte(mipmapmask & 0xFF))
+						mipmapvert >>= 8
+						mipmapmask >>= 8
 					}
 				}
 			}
 		} else {
-			L.RaiseError("Tile %d was not bytes (string)!", i)
+			L.RaiseError("Tile %d was not bytes (string)!", fi)
 			return 0
 		}
 	}
