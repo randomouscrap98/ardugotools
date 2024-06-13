@@ -498,6 +498,7 @@ func luaRaycastHelper(L *lua.LState, state *FxDataState) int {
 	for i := 1; i <= frames; i++ {
 		lv := data.RawGetInt(i)
 		if frame, ok := lv.(lua.LString); ok {
+			fdat := []byte(string(frame))
 			// We iterate over every VERTICAL stripe
 			for vso := 0; vso < width; vso++ {
 				var stripe uint32
@@ -507,10 +508,11 @@ func luaRaycastHelper(L *lua.LState, state *FxDataState) int {
 				for vsi := vso; vsi < width*height; vsi += width {
 					// Set bits accordingly. This is NOT the normal arduboy image format, it's a special
 					// format made specifically for raycasting (stored as whole vertical stripes; mipmapped)
-					if frame[vsi] == 1 {
-						stripe |= bit
-					} else if frame[vsi] == 2 {
+					if fdat[vsi] < 2 {
 						stripemask |= bit
+						if fdat[vsi] == 1 {
+							stripe |= bit
+						}
 					}
 					bit <<= 1
 				}
@@ -519,10 +521,16 @@ func luaRaycastHelper(L *lua.LState, state *FxDataState) int {
 				for step := 1; step <= 8; step++ {
 					var stripevalue uint32
 					var maskvalue uint32
+					bit = 1
 					// This is the part we DON'T want to do on arduboy, so we precalc it. FX is huge, it's fine
-					for bit := 0; bit < width; bit += step {
-						stripevalue |= (1 & (stripe >> bit))
-						maskvalue |= (1 & (stripemask >> bit))
+					for b := 0; b < height; b += step {
+						if (1 & (stripe >> b)) == 1 {
+							stripevalue |= bit
+						}
+						if (1 & (stripemask >> b)) == 1 {
+							maskvalue |= bit
+						}
+						bit <<= 1
 					}
 					// Now, given the byte size, store the two things.
 					for b := 0; b < int(mmsizes[step-1]); b++ {

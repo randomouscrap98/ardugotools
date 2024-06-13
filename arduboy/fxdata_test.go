@@ -171,7 +171,7 @@ header("// Raycast bytes written2: " .. written .. "\n")
 	}
 
 	headerstr := header.String()
-	//bytes := bin.Bytes()
+	fxd := bin.Bytes()
 
 	expectedheaders := []string{
 		"constexpr uint24_t spritesheet",
@@ -194,6 +194,53 @@ header("// Raycast bytes written2: " .. written .. "\n")
 	if strings.Contains(headerstr, "sprootsheetMask") {
 		t.Fatalf("Unexpected write '%s' in header. Header:\n%s", "sprootsheetMask", headerstr)
 	}
+
+	rawImg, err := os.Open(fileTestPath("spritesheet.png"))
+	if err != nil {
+		t.Fatalf("Can't open spritesheet.png for comparison: %s", err)
+	}
+	defer rawImg.Close()
+
+	config := TileConfig{
+		Width:  32,
+		Height: 32,
+	}
+	tiles, computed, err := SplitImageToTiles(rawImg, &config)
+	if err != nil {
+		t.Fatalf("Can't open spritesheet.png for comparison: %s", err)
+	}
+
+	//ptiles := make([][]byte, len(tiles))
+	for i, tile := range tiles {
+		//ptiles[i], _, _ = ImageToPaletted(tile, 100, 10)
+		ptile, _, _ := ImageToPaletted(tile, 100, 10)
+
+		// First, check to see if the first 4 bytes are what we expect
+		for x := 0; x < config.Width; x++ {
+			var fulltile uint32
+			var fullmask uint32
+			for b := 0; b < 4; b++ {
+				fulltile |= uint32(fxd[i*32*13+13*x+b]) << (8 * b)
+				fullmask |= uint32(fxd[32*13*computed.HFrames*computed.VFrames+i*32*13+13*x+b]) << (8 * b)
+			}
+			//log.Printf("xt: %08x xm: %08x", fulltile, fullmask)
+			for y := 0; y < config.Height; y++ {
+				expected := ptile[x+y*config.Width]
+				actual := byte(1 & (fulltile >> y))
+				actualmask := byte(1 & (fullmask >> y))
+				if expected == 2 && (actualmask != 0 || actual != 0) {
+					t.Fatalf("Error in tile %d at (%d,%d): Expected transparency, got %d|%d", i, x, y, actual, actualmask)
+				}
+				if expected == 1 && (actualmask != 1 || actual != 1) {
+					t.Fatalf("Error in tile %d at (%d,%d): Expected white, got %d|%d", i, x, y, actual, actualmask)
+				}
+				if expected == 0 && (actualmask != 1 || actual != 0) {
+					t.Fatalf("Error in tile %d at (%d,%d): Expected black, got %d|%d", i, x, y, actual, actualmask)
+				}
+			}
+		}
+	}
+
 }
 
 func TestRunLuaFxGenerator_Real1(t *testing.T) {
