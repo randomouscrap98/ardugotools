@@ -67,7 +67,7 @@ func AnalyzeSketch(bindata []byte, bootloader bool) SketchAnalysis {
 	for page := 0; page < FlashPageCount; page++ {
 		pstart := page * FlashPageSize
 		pend := (page + 1) * FlashPageSize
-		if len(bindata) > pstart && bytes.Compare(bindata[pstart:pend], emptyPage) != 0 {
+		if len(bindata) > pstart && !bytes.Equal(bindata[pstart:pend], emptyPage) {
 			result.TotalPages = page + 1
 			if page >= CaterinaStartPage {
 				result.OverwritesCaterina = true

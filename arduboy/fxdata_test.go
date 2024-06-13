@@ -2,6 +2,7 @@ package arduboy
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"strings"
 	"testing"
@@ -18,7 +19,7 @@ func TestRunLuaFxGenerator_Empty(t *testing.T) {
 		t.Fatalf("Error running basic fx generator: %s", err)
 	}
 
-	headerstr := string(header.Bytes())
+	headerstr := header.String()
 
 	expected := []string{
 		"#pragma once",
@@ -26,7 +27,7 @@ func TestRunLuaFxGenerator_Empty(t *testing.T) {
 		"FX_DATA_BYTES",
 	}
 	for _, exp := range expected {
-		if strings.Index(headerstr, exp) < 0 {
+		if !strings.Contains(headerstr, exp) {
 			t.Fatalf("Didn't write '%s' in empty header. Header:\n%s", exp, headerstr)
 		}
 	}
@@ -63,7 +64,7 @@ func TestRunLuaFxGenerator_SaveOnly(t *testing.T) {
 		t.Fatalf("Expected SaveStart=%d, got %d", expected, offsets.SaveStart)
 	}
 
-	headerstr := string(header.Bytes())
+	headerstr := header.String()
 
 	expectedheaders := []string{
 		"#pragma once",
@@ -73,8 +74,8 @@ func TestRunLuaFxGenerator_SaveOnly(t *testing.T) {
 		"FX_SAVE_BYTES",
 	}
 	for _, exp := range expectedheaders {
-		if strings.Index(headerstr, exp) < 0 {
-			t.Fatalf("Didn't write '%s' in empty header. Header:\n%s", exp, headerstr)
+		if !strings.Contains(headerstr, exp) {
+			t.Fatalf("Didn't write '%s' in header. Header:\n%s", exp, headerstr)
 		}
 	}
 }
@@ -124,7 +125,7 @@ header("}\n")
 		t.Fatalf("Expected DataLengthFlash=%d, got %d", FXPageSize, offsets.DataLengthFlash)
 	}
 
-	headerstr := string(header.Bytes())
+	headerstr := header.String()
 	bytes := bin.Bytes()
 
 	if len(bytes) != FXPageSize {
@@ -142,9 +143,56 @@ header("}\n")
 		"constexpr uint24_t myrawshorts = 0x00006A;", // 106 -> 112
 	}
 	for _, exp := range expectedheaders {
-		if strings.Index(headerstr, exp) < 0 {
-			t.Fatalf("Didn't write '%s' in empty header. Header:\n%s", exp, headerstr)
+		if !strings.Contains(headerstr, exp) {
+			t.Fatalf("Didn't write '%s' in header. Header:\n%s", exp, headerstr)
 		}
+	}
+}
+
+func TestRunLuaFxGenerator_Raycast(t *testing.T) {
+	script := `
+local written = raycast_helper("spritesheet", true, image("spritesheet.png", 32, 32, 0, true, 100, 10, true))
+header("// Raycast bytes written: " .. written .. "\n")
+written = raycast_helper("sprootsheet", false, image("spritesheet.png", 32, 32, 0, true, 100, 10, true))
+header("// Raycast bytes written2: " .. written .. "\n")
+`
+
+	var header bytes.Buffer
+	var bin bytes.Buffer
+
+	offsets, err := RunLuaFxGenerator(script, &header, &bin, testPath())
+	if err != nil {
+		t.Fatalf("Error running basic fx generator: %s", err)
+	}
+
+	expectedDataLength := 416 * 4 * 3
+	if offsets.DataLength != expectedDataLength {
+		t.Fatalf("Expected DataLength=%d, got %d", expectedDataLength, offsets.DataLength)
+	}
+
+	headerstr := header.String()
+	//bytes := bin.Bytes()
+
+	expectedheaders := []string{
+		"constexpr uint24_t spritesheet",
+		"constexpr uint24_t spritesheetMask",
+		"spritesheetWidth  = 32",
+		"spritesheetHeight = 32",
+		"spritesheetFrames = 4",
+		"sprootsheetWidth  = 32",
+		"sprootsheetHeight = 32",
+		"sprootsheetFrames = 4",
+		"constexpr uint24_t sprootsheet",
+		fmt.Sprintf("Raycast bytes written: %d", 416*4*2),
+		fmt.Sprintf("Raycast bytes written2: %d", 416*4),
+	}
+	for _, exp := range expectedheaders {
+		if !strings.Contains(headerstr, exp) {
+			t.Fatalf("Didn't write '%s' in header. Header:\n%s", exp, headerstr)
+		}
+	}
+	if strings.Contains(headerstr, "sprootsheetMask") {
+		t.Fatalf("Unexpected write '%s' in header. Header:\n%s", "sprootsheetMask", headerstr)
 	}
 }
 
@@ -207,7 +255,7 @@ func TestRunLuaFxGenerator_Real1(t *testing.T) {
 		t.Fatalf("Generated fxdata not the same at index %d! old length %d vs new %d", difpos, len(fxoldgen), len(bbin))
 	}
 
-	headerstr := string(header.Bytes())
+	headerstr := header.String()
 	expected := []string{
 		"#pragma once",
 		"FX_DATA_PAGE",
@@ -221,7 +269,7 @@ func TestRunLuaFxGenerator_Real1(t *testing.T) {
 		"spritesheetHeight",
 	}
 	for _, exp := range expected {
-		if strings.Index(headerstr, exp) < 0 {
+		if !strings.Contains(headerstr, exp) {
 			t.Fatalf("Didn't write '%s' in real1 header. Header:\n%s", exp, headerstr)
 		}
 	}

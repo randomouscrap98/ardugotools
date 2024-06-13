@@ -263,6 +263,8 @@ func luaImage(L *lua.LState, state *FxDataState) int {
 		for _, str := range ptiles {
 			luaTable.Append(lua.LString(string(str)))
 		}
+		log.Printf("Converted image '%s' to %d tiles of %d width, %d height (NO RAW CONVERT)",
+			filename, len(tiles), computed.SpriteWidth, computed.SpriteHeight)
 		L.Push(luaTable)
 	}
 
@@ -519,10 +521,16 @@ func luaRaycastHelper(L *lua.LState, state *FxDataState) int {
 					var maskvalue uint32
 					// This is the part we DON'T want to do on arduboy, so we precalc it. FX is huge, it's fine
 					for bit := 0; bit < width; bit += step {
-						stripevalue |= 1 & (stripe >> bit)
-						maskvalue |= 1 & (stripemask >> bit)
+						stripevalue |= (1 & (stripe >> bit))
+						maskvalue |= (1 & (stripemask >> bit))
 					}
 					// Now, given the byte size, store the two things.
+					for b := 0; b < int(mmsizes[step-1]); b++ {
+						framebuf.WriteByte(byte(stripevalue & 0xFF))
+						maskbuf.WriteByte(byte(maskvalue & 0xFF))
+						stripevalue >>= 8
+						maskvalue >>= 8
+					}
 				}
 			}
 		} else {
@@ -535,6 +543,8 @@ func luaRaycastHelper(L *lua.LState, state *FxDataState) int {
 	if usemask {
 		written += state.WriteBin(maskbuf.Bytes(), L)
 	}
+
+	log.Printf("Wrote raycast data '%s' to header as %d bytes", name, written)
 
 	// Return both the address AND the length
 	L.Push(lua.LNumber(addr))
@@ -609,13 +619,14 @@ func RunLuaFxGenerator(script string, header io.Writer, bin io.Writer, dir strin
 	L.SetGlobal("bytes", L.NewFunction(luaBytes))
 	state.AddFunction("file", luaFile, L)
 	state.AddFunction("image", luaImage, L)
-	state.AddFunction("address", luaAddress, L)          // current address
-	state.AddFunction("header", luaHeader, L)            // Write arbitrary header text
-	state.AddFunction("field", luaField, L)              // Write header definition for field (begin field)
-	state.AddFunction("image_helper", luaImageHelper, L) // write header stuff for image (begin field)
-	state.AddFunction("write", luaWrite, L)              // Write raw data to bin (no header)
-	state.AddFunction("pad", luaPad, L)                  // pad data to given alignment
-	state.AddFunction("begin_save", luaBeginSave, L)     // begin the save section
+	state.AddFunction("address", luaAddress, L)              // current address
+	state.AddFunction("header", luaHeader, L)                // Write arbitrary header text
+	state.AddFunction("field", luaField, L)                  // Write header definition for field (begin field)
+	state.AddFunction("image_helper", luaImageHelper, L)     // write header stuff for image (begin field)
+	state.AddFunction("raycast_helper", luaRaycastHelper, L) // write header stuff for raycast image (begin field)
+	state.AddFunction("write", luaWrite, L)                  // Write raw data to bin (no header)
+	state.AddFunction("pad", luaPad, L)                      // pad data to given alignment
+	state.AddFunction("begin_save", luaBeginSave, L)         // begin the save section
 
 	// Always write the preamble before the user starts...
 	_, err := io.WriteString(state.Header, fmt.Sprintf(`#pragma once
