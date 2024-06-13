@@ -225,8 +225,8 @@ header("// Raycast bytes written2: " .. written .. "\n")
 			var fulltile uint32
 			var fullmask uint32
 			for b := 0; b < 4; b++ {
-				fulltile |= uint32(fxd[i*32*13+13*x+b]) << (8 * b)
-				fullmask |= uint32(fxd[32*13*computed.HFrames*computed.VFrames+i*32*13+13*x+b]) << (8 * b)
+				fulltile |= uint32(fxd[i*32*mipmapbytes+mipmapbytes*x+b]) << (8 * b)
+				fullmask |= uint32(fxd[32*mipmapbytes*computed.HFrames*computed.VFrames+i*32*mipmapbytes+mipmapbytes*x+b]) << (8 * b)
 			}
 			//log.Printf("xt: %08x xm: %08x", fulltile, fullmask)
 			for y := 0; y < config.Height; y++ {

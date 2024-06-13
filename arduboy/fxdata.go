@@ -471,21 +471,8 @@ func luaRaycastHelper(L *lua.LState, state *FxDataState) int {
 	mipmaps := []int{32, 16, 8, 4}
 	mmstripelength := 8
 
-	// Precalc sizes of mipmaps. This is both to have a comment showing the offsets and to calculate the correct mask location
-	// mmsizes := make([]uint8, 8)
-	// var mmstripelength uint8
-	// for i := 1; i <= 8; i++ {
-	// 	mmsizes[i-1] = uint8(math.Ceil(float64(width) / float64(i) / 8.0))
-	// 	mmstripelength += mmsizes[i-1]
-	// }
-
 	state.WriteHeader(fmt.Sprintf("// Image info for \"%s\"\n", name), L)
 	state.WriteHeader(fmt.Sprintf("// NOTE: raycast tiles stored as mipmaps, %d %d byte strips per tile\n", mipmaps[0], mmstripelength), L)
-	// state.WriteHeader("// NOTE: offsets for raycast stripes are: ", L)
-	// for _, o := range mmsizes {
-	// 	state.WriteHeader(fmt.Sprintf("%d, ", o), L)
-	// }
-	// state.WriteHeader(fmt.Sprintf(" => %d\n", mmstripelength), L)
 	state.WriteHeader(fmt.Sprintf("constexpr uint24_t %s       = 0x%0*X;\n", name, 6, addr), L)
 	if usemask {
 		maskaddr := addr + frames*32*int(mmstripelength) // We calculated each frame's stripe size in bytes
