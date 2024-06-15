@@ -31,12 +31,23 @@
 --   + spacing          // Default: 0, Spacing between tiles (including on edges)
 --   + usemask          // Default: false, Whether to use transparency as a data mask
 --   + threshold        // Default: 100, The upper bound for black pixels
---   + alphathresh      // Default: 10, The upper bound for alpha threshold
+--   + alphathreshold   // Default: 10, The upper bound for alpha threshold
+--   + rawtiles         // Default: false, return raw paletted tiles instead of converted data (0 = black, 1 = white, 2 = transparent)
+--   *NOTE:* You can instead pass a table as the first parameter with only the fields you want set, named as above
 --  RETURNS:
 --   + raw data         // Write this directly to the fx flash
 --   + tile count       // Amount of tiles image was split into
 --   + width of tiles   // Width of each tile
 --   + height of tiles  // Height of each tile
+-- * image_resize(params)  // Resize raw tiles to be a different size (useful for mipmap levels in raycaster/etc). VERY BAD scaling (nearest neighbor)
+--  PARAMETERS:
+--   + tiles            // An array (table) of all the raw tile data as returned by image() when 'rawtiles' is set
+--   + owidth           // The original width of the tiles
+--   + oheight          // The original height of the tiles
+--   + width            // New width you want tiles (larger or smaller)
+--   + height           // New height you want tiles (larger or smaller)
+--  RETURNS:
+--   + array of resized tiles
 ----------------------------------------------------------------------------------------
 -- Then there are functions for writing data out. There are two locations data is written:
 -- the header file and the binary. The binary is treated as one blob with fxdata and

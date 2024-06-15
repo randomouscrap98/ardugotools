@@ -12,6 +12,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -146,6 +147,33 @@ func MakeFxHeaderMainPointer(name string, addr uint, length uint) string {
 		MakeFxHeaderField("uint24_t", name+"_BYTES", int(length), 0))
 }
 
+func pullString(table *lua.LTable, key string, done func(string)) bool {
+	ttemp := table.RawGetString(key)
+	tstring, ok := ttemp.(lua.LString)
+	if ok {
+		done(string(tstring))
+	}
+	return ok
+}
+
+func pullInt(table *lua.LTable, key string, done func(int)) bool {
+	ttemp := table.RawGetString(key)
+	tnum, ok := ttemp.(lua.LNumber)
+	if ok {
+		done(int(tnum))
+	}
+	return ok
+}
+
+func pullBool(table *lua.LTable, key string, done func(bool)) bool {
+	ttemp := table.RawGetString(key)
+	tbool, ok := ttemp.(lua.LBool)
+	if ok {
+		done(bool(tbool))
+	}
+	return ok
+}
+
 // -----------------------------
 //          READERS
 // -----------------------------
@@ -186,6 +214,19 @@ func luaImage(L *lua.LState, state *FxDataState) int {
 	threshold := L.ToInt(6)   // The upper bound for black pixels
 	alphathresh := L.ToInt(7) // The upper bound for alpha threshold
 	skipconvert := L.ToBool(8)
+
+	// If the user instead passed a table as the first element, let's do it
+	table := L.ToTable(1)
+	if table != nil {
+		pullString(table, "filename", func(s string) { filename = s })
+		pullInt(table, "width", func(i int) { width = i })
+		pullInt(table, "height", func(i int) { height = i })
+		pullInt(table, "spacing", func(i int) { spacing = i })
+		pullBool(table, "usemask", func(b bool) { usemask = b })
+		pullInt(table, "threshold", func(i int) { threshold = i })
+		pullInt(table, "alphathreshold", func(i int) { alphathresh = i })
+		pullBool(table, "rawtiles", func(b bool) { skipconvert = b })
+	}
 
 	// Validation and/or setting the defaults if not set
 	if filename == "" {
@@ -273,6 +314,37 @@ func luaImage(L *lua.LState, state *FxDataState) int {
 	L.Push(lua.LNumber(computed.SpriteHeight)) // individual sprite height
 
 	return 4
+}
+
+// A VERY SIMPLE image resize function.
+func luaImageResize(L *lua.LState) int {
+	data := L.ToTable(1)
+	owidth := L.ToInt(2)  // Width of orig tiles
+	oheight := L.ToInt(3) // Height of orig tiles
+	width := L.ToInt(4)   // New desired width
+	height := L.ToInt(5)  // New desired height
+
+	var result lua.LTable
+	for i := 1; i <= data.Len(); i++ {
+		lv := data.RawGetInt(i)
+		if lvstring, ok := lv.(lua.LString); ok {
+			raw := []byte(string(lvstring))
+			out := make([]byte, width*height)
+			for x := 0; x < width; x++ {
+				hofs := int(math.Floor(0.5 + float64((owidth-1)*x/(width-1))))
+				for y := 0; y < height; y++ {
+					vofs := int(math.Floor(0.5 + float64((oheight-1)*y/(height-1))))
+					out[x+y*width] = raw[hofs+vofs*owidth]
+				}
+			}
+			result.RawSetInt(i, lua.LString(string(out)))
+		} else {
+			L.RaiseError("Expected raw tile data at index %d!", i)
+		}
+	}
+
+	L.Push(&result)
+	return 1
 }
 
 // Function for lua scripts that lets you parse hex
@@ -450,46 +522,79 @@ func luaImageHelper(L *lua.LState, state *FxDataState) int {
 // data/fields for use with the raycaster. If width/height is not 32, currently it throws an error
 func luaRaycastHelper(L *lua.LState, state *FxDataState) int {
 	name := L.ToString(1)
-	usemask := L.ToBool(2)
-	data := L.ToTable(3)
-	frames := L.ToInt(4)
-	width := L.ToInt(5)
-	height := L.ToInt(6)
+	mipmaps := L.ToTable(2)
+	usemask := L.ToBool(3)
 
-	// if width != 32 || height != 32 {
-	// 	L.RaiseError("Width and height must be 32 for raycast engine!")
-	// 	return 0
-	// }
-	if data == nil {
-		L.RaiseError("Must pass table of tiles as third argument!")
+	if mipmaps == nil {
+		L.RaiseError("Must pass table of mipmapped tiles as second argument!")
 		return 0
 	}
 
+	// We store the mipmaps as just blobs next to each other, however the format is somewhat special:
+	// we store full vertical strips of each tile one by one rather than in the normal format.
+	// The format is like this:
+	// frame0:32, frame0:16, frame0:8, frame0:4, frame1:32, frame1:16, etc
+	// So ALL the mipmapped data for a frame is stored next to each other, then within each
+	// mipmap are full vertical stripes, not the usual arduboy 8 vertical pixel stripe.
+	requiredmipmaps := []string{"32", "16", "8", "4"}
+	tilesize := (32 * 4) + (16 * 2) + (8 * 1) + (4 * 1)
+
+	// Make sure the required mipmaps are there, and that each set of tiles is the same length.
+	// We need all the mipmaps available and all the same length for the data generation
+	// part to work (this is JUST the check)
+	frames := 0
+	for _, rmm := range requiredmipmaps {
+		mmlv := mipmaps.RawGetString(rmm)
+		mmtable, ok := mmlv.(*lua.LTable)
+		if !ok {
+			L.RaiseError("Couldn't find required mipmap level %s", rmm)
+			return 0
+		}
+		if frames == 0 {
+			frames = mmtable.Len()
+		}
+		if frames != mmtable.Len() {
+			L.RaiseError("Different amount of tiles in mipmap %s: expected %d, got %d", rmm, frames, mmtable.Len())
+			return 0
+		}
+	}
+
 	addr := state.CurrentAddress()
-
-	// Not sure if this is permanent yet, but these are the mipmap levels we generate
-	mipmaps := []int{32, 16, 8, 4}
-	mmstripelength := 8
-
 	state.WriteHeader(fmt.Sprintf("// Image info for \"%s\"\n", name), L)
-	state.WriteHeader(fmt.Sprintf("// NOTE: raycast tiles stored as mipmaps, %d %d byte strips per tile\n", mipmaps[0], mmstripelength), L)
+	state.WriteHeader(fmt.Sprintf("// NOTE: raycast tiles stored as mipmaps, ordered in widths: %s\n", strings.Join(requiredmipmaps, ",")), L)
 	state.WriteHeader(fmt.Sprintf("constexpr uint24_t %s       = 0x%0*X;\n", name, 6, addr), L)
 	if usemask {
-		maskaddr := addr + frames*32*int(mmstripelength) // We calculated each frame's stripe size in bytes
+		maskaddr := addr + frames*tilesize // We calculated each frame's total size beforehand (it's always the same)
 		state.WriteHeader(fmt.Sprintf("constexpr uint24_t %sMask   = 0x%0*X;\n", name, 6, maskaddr), L)
 	}
 	state.WriteHeader(fmt.Sprintf("constexpr uint8_t  %sFrames = %d;\n", name, frames), L)
-	state.WriteHeader(fmt.Sprintf("constexpr uint16_t %sWidth  = %d;\n", name, width), L)
-	state.WriteHeader(fmt.Sprintf("constexpr uint16_t %sHeight = %d;\n", name, height), L)
 
 	var framebuf bytes.Buffer
 	var maskbuf bytes.Buffer
-	written := 0
 
-	// Split frame into a weird amalgamation
+	// ALL the mipmaps for each frame are stored next to each other, so iterate over each frame first
 	for fi := 1; fi <= frames; fi++ {
-		lv := data.RawGetInt(fi)
-		if frame, ok := lv.(lua.LString); ok {
+		// Then iterate over mipmaps
+		for _, rmm := range requiredmipmaps {
+			width, err := strconv.Atoi(rmm)
+			if err != nil {
+				L.RaiseError("SERIOUS PROGRAM ERROR: internal mipmap value not integer: %s", err)
+				return 0
+			}
+			// Try to get to the specific mipmap
+			mmlv := mipmaps.RawGetString(rmm)
+			mmframes, ok := mmlv.(*lua.LTable)
+			if !ok {
+				L.RaiseError("Somehow, even after validation, mipmap table didn't have mipmap %s", rmm)
+				return 0
+			}
+			// get the frame data from the mipmap frame array
+			framelv := mmframes.RawGetInt(fi)
+			frame, ok := framelv.(lua.LString)
+			if !ok {
+				L.RaiseError("Somehow, even after validation, mipmap %s frame array didn't have frame %d", rmm, fi)
+				return 0
+			}
 			fdat := []byte(string(frame))
 			// We iterate over every VERTICAL stripe
 			for vso := 0; vso < width; vso++ {
@@ -497,48 +602,27 @@ func luaRaycastHelper(L *lua.LState, state *FxDataState) int {
 				var framemask uint32
 				var bit uint32 = 1
 				// Iterate over the pixels of a vertical stripe of the frame
-				for vsi := vso; vsi < width*height; vsi += width {
-					// Set bits accordingly. This is NOT the normal arduboy image format, it's a special
-					// format made specifically for raycasting (stored as whole vertical stripes; mipmapped)
-					if fdat[vsi] < 2 {
+				for vsi := vso; vsi < width*width; vsi += width {
+					if fdat[vsi] < 2 { // If it's not transparent
 						framemask |= bit
-						if fdat[vsi] == 1 {
+						if fdat[vsi] == 1 { // If it's white
 							framevert |= bit
 						}
 					}
 					bit <<= 1
 				}
-				// Iterate over mipmaps and generate special "stripes" with the mipmap data stored inside
-				for _, mipmap := range mipmaps {
-					var mipmapvert uint32
-					var mipmapmask uint32
-					bit = 1
-					for i := 0; i < mipmap; i++ {
-						vertofs := int(math.Floor(0.5 + float64((width-1)*i/(mipmap-1))))
-						if (1 & (framevert >> vertofs)) == 1 {
-							mipmapvert |= bit
-						}
-						if (1 & (framemask >> vertofs)) == 1 {
-							mipmapmask |= bit
-						}
-						bit <<= 1
-					}
-					// Now, given the byte size, store the two things.
-					for b := 0; b < max(1, mipmap/8); b++ {
-						framebuf.WriteByte(byte(mipmapvert & 0xFF))
-						maskbuf.WriteByte(byte(mipmapmask & 0xFF))
-						mipmapvert >>= 8
-						mipmapmask >>= 8
-					}
+				// Store the bytes of this vertical stripe
+				for b := 0; b < max(1, width/8); b++ {
+					framebuf.WriteByte(byte(framevert & 0xFF))
+					maskbuf.WriteByte(byte(framemask & 0xFF))
+					framevert >>= 8
+					framemask >>= 8
 				}
 			}
-		} else {
-			L.RaiseError("Tile %d was not bytes (string)!", fi)
-			return 0
 		}
 	}
 
-	written += state.WriteBin(framebuf.Bytes(), L)
+	written := state.WriteBin(framebuf.Bytes(), L)
 	if usemask {
 		written += state.WriteBin(maskbuf.Bytes(), L)
 	}
@@ -616,6 +700,7 @@ func RunLuaFxGenerator(script string, header io.Writer, bin io.Writer, dir strin
 	L.SetGlobal("base64", L.NewFunction(luaBase64))
 	L.SetGlobal("json", L.NewFunction(luaJson))
 	L.SetGlobal("bytes", L.NewFunction(luaBytes))
+	L.SetGlobal("image_resize", L.NewFunction(luaImageResize))
 	state.AddFunction("file", luaFile, L)
 	state.AddFunction("image", luaImage, L)
 	state.AddFunction("address", luaAddress, L)              // current address
