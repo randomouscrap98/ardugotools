@@ -522,8 +522,8 @@ func luaImageHelper(L *lua.LState, state *FxDataState) int {
 // data/fields for use with the raycaster. If width/height is not 32, currently it throws an error
 func luaRaycastHelper(L *lua.LState, state *FxDataState) int {
 	name := L.ToString(1)
-	mipmaps := L.ToTable(2)
-	usemask := L.ToBool(3)
+	usemask := L.ToBool(2)
+	mipmaps := L.ToTable(3)
 
 	if mipmaps == nil {
 		L.RaiseError("Must pass table of mipmapped tiles as second argument!")
@@ -561,7 +561,7 @@ func luaRaycastHelper(L *lua.LState, state *FxDataState) int {
 
 	addr := state.CurrentAddress()
 	state.WriteHeader(fmt.Sprintf("// Image info for \"%s\"\n", name), L)
-	state.WriteHeader(fmt.Sprintf("// NOTE: raycast tiles stored as mipmaps, ordered in widths: %s\n", strings.Join(requiredmipmaps, ",")), L)
+	state.WriteHeader(fmt.Sprintf("// Raycast frame bytes: %d, mipmap widths: %s\n", tilesize, strings.Join(requiredmipmaps, ",")), L)
 	state.WriteHeader(fmt.Sprintf("constexpr uint24_t %s       = 0x%0*X;\n", name, 6, addr), L)
 	if usemask {
 		maskaddr := addr + frames*tilesize // We calculated each frame's total size beforehand (it's always the same)

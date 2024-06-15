@@ -151,9 +151,29 @@ header("}\n")
 
 func TestRunLuaFxGenerator_Raycast(t *testing.T) {
 	script := `
-local written = raycast_helper("spritesheet", true, image("spritesheet.png", 32, 32, 0, true, 100, 10, true))
+-- This first one tests the normal parameter passing
+sprites,frames,width,height = image("spritesheet.png", 32, 32, 0, true, 100, 10, true)
+written = raycast_helper("spritesheet", true, {
+	["32"] = sprites,
+	["16"] = image_resize(sprites, width, height, 16, 16),
+	["8"] = image_resize(sprites, width, height, 8, 8),
+	["4"] = image_resize(sprites, width, height, 4, 4),
+})
 header("// Raycast bytes written: " .. written .. "\n")
-written = raycast_helper("sprootsheet", false, image("spritesheet.png", 32, 32, 0, true, 100, 10, true))
+-- And this one tests the table
+sproots,frames,width,height = image({
+	filename = "spritesheet.png",
+	width = 32,
+	height = 32,
+	usemask = true,
+	rawtiles = true,
+})
+written = raycast_helper("sprootsheet", false, {
+	["32"] = sproots,
+	["16"] = image_resize(sproots, width, height, 16, 16),
+	["8"] = image_resize(sproots, width, height, 8, 8),
+	["4"] = image_resize(sproots, width, height, 4, 4),
+})
 header("// Raycast bytes written2: " .. written .. "\n")
 `
 
@@ -168,28 +188,25 @@ header("// Raycast bytes written2: " .. written .. "\n")
 	headerstr := header.String()
 	fxd := bin.Bytes()
 
-	var maxmipmap int
-	var mipmapbytes int
-	mmloc := strings.Index(headerstr, "mipmaps,")
-	fmt.Sscanf(headerstr[mmloc:], "mipmaps, %d %d", &maxmipmap, &mipmapbytes)
+	var tilesize int
+	//var maxmipmap int
+	//var mipmapbytes int
+	tsindex := strings.Index(headerstr, "Raycast frame bytes:")
+	fmt.Sscanf(headerstr[tsindex:], "Raycast frame bytes: %d", &tilesize)
 
-	expectedDataLength := maxmipmap * mipmapbytes * 4 * 3
+	expectedDataLength := tilesize * 4 * 3
 	if offsets.DataLength != expectedDataLength {
 		t.Fatalf("Expected DataLength=%d, got %d", expectedDataLength, offsets.DataLength)
 	}
 
 	expectedheaders := []string{
 		"constexpr uint24_t spritesheet",
-		"constexpr uint24_t spritesheetMask",
-		"spritesheetWidth  = 32",
-		"spritesheetHeight = 32",
-		"spritesheetFrames = 4",
-		"sprootsheetWidth  = 32",
-		"sprootsheetHeight = 32",
-		"sprootsheetFrames = 4",
 		"constexpr uint24_t sprootsheet",
-		fmt.Sprintf("Raycast bytes written: %d", maxmipmap*mipmapbytes*4*2),
-		fmt.Sprintf("Raycast bytes written2: %d", maxmipmap*mipmapbytes*4),
+		"constexpr uint24_t spritesheetMask",
+		"spritesheetFrames = 4",
+		"sprootsheetFrames = 4",
+		fmt.Sprintf("Raycast bytes written: %d", tilesize*4*2),
+		fmt.Sprintf("Raycast bytes written2: %d", tilesize*4),
 	}
 	for _, exp := range expectedheaders {
 		if !strings.Contains(headerstr, exp) {
@@ -210,23 +227,21 @@ header("// Raycast bytes written2: " .. written .. "\n")
 		Width:  32,
 		Height: 32,
 	}
-	tiles, computed, err := SplitImageToTiles(rawImg, &config)
+	tiles, _, err := SplitImageToTiles(rawImg, &config)
 	if err != nil {
 		t.Fatalf("Can't open spritesheet.png for comparison: %s", err)
 	}
 
 	//ptiles := make([][]byte, len(tiles))
 	for i, tile := range tiles {
-		//ptiles[i], _, _ = ImageToPaletted(tile, 100, 10)
 		ptile, _, _ := ImageToPaletted(tile, 100, 10)
-
-		// First, check to see if the first 4 bytes are what we expect
+		// Check if the 32 mipmap is what we expect
 		for x := 0; x < config.Width; x++ {
 			var fulltile uint32
 			var fullmask uint32
 			for b := 0; b < 4; b++ {
-				fulltile |= uint32(fxd[i*32*mipmapbytes+mipmapbytes*x+b]) << (8 * b)
-				fullmask |= uint32(fxd[32*mipmapbytes*computed.HFrames*computed.VFrames+i*32*mipmapbytes+mipmapbytes*x+b]) << (8 * b)
+				fulltile |= uint32(fxd[i*tilesize+x*4+b]) << (8 * b)
+				fullmask |= uint32(fxd[(i+4)*tilesize+x*4+b]) << (8 * b)
 			}
 			//log.Printf("xt: %08x xm: %08x", fulltile, fullmask)
 			for y := 0; y < config.Height; y++ {
