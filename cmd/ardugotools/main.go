@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	AppVersion = "0.5.0"
+	AppVersion = "0.5.1"
 )
 
 // Quick way to fail on error, since most commands are "doing" something on
@@ -812,7 +812,7 @@ func (c *FxDataGenerateCmd) Run() error {
 	releasePath := filepath.Join(c.Outfolder, "release")
 	// Pre-generate the output structure
 	if c.NoRelease {
-		err = os.MkdirAll(c.Outfolder, 770)
+		err = os.MkdirAll(c.Outfolder, 0770)
 	} else {
 		err = os.MkdirAll(releasePath, 0770)
 	}
