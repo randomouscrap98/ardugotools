@@ -149,6 +149,56 @@ header("}\n")
 	}
 }
 
+// Uint24 is a special thing
+func TestRunLuaFxGenerator_Uint24(t *testing.T) {
+	script := `
+pointers = {}
+table.insert(pointers, field("data1"))
+write("it's something")  			-- 14 bytes
+table.insert(pointers, field("data2"))
+write("it's REALLY something")      -- 21 bytes
+table.insert(pointers, field("data3"))
+write("it's over...")               -- 12 bytes
+field("pointers")
+write(bytes(pointers, "uint24"))    -- 9 bytes
+`
+
+	var header bytes.Buffer
+	var bin bytes.Buffer
+
+	offsets, err := RunLuaFxGenerator(script, &header, &bin, "")
+	if err != nil {
+		t.Fatalf("Error running uint24 fx generator: %s", err)
+	}
+
+	expectedDataLength := 56
+	if offsets.DataLength != expectedDataLength {
+		t.Fatalf("Expected DataLength=%d, got %d", expectedDataLength, offsets.DataLength)
+	}
+	if offsets.DataLengthFlash != FXPageSize {
+		t.Fatalf("Expected DataLengthFlash=%d, got %d", FXPageSize, offsets.DataLengthFlash)
+	}
+
+	headerstr := header.String()
+	bytes := bin.Bytes()
+
+	if len(bytes) != FXPageSize {
+		t.Fatalf("Expected %d bytes, got %d", FXPageSize, len(bytes))
+	}
+
+	expectedheaders := []string{
+		"constexpr uint24_t data1 = 0x000000;",
+		"constexpr uint24_t data2 = 0x00000E;",
+		"constexpr uint24_t data3 = 0x000023;",
+		"constexpr uint24_t pointers = 0x00002F;",
+	}
+	for _, exp := range expectedheaders {
+		if !strings.Contains(headerstr, exp) {
+			t.Fatalf("Didn't write '%s' in header. Header:\n%s", exp, headerstr)
+		}
+	}
+}
+
 func TestRunLuaFxGenerator_Raycast(t *testing.T) {
 	script := `
 -- This first one tests the normal parameter passing

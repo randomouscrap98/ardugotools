@@ -398,6 +398,19 @@ func luaBytes(L *lua.LState) int {
 				writebuf(int32(raw))
 			} else if typ == "uint32" {
 				writebuf(uint32(raw))
+			} else if typ == "uint24" {
+				// Uint24 is a WHOLE thing...
+				var tempbuf bytes.Buffer
+				err = binary.Write(&tempbuf, binary.LittleEndian, uint32(raw))
+				if err != nil {
+					fullbytes := tempbuf.Bytes()
+					if len(fullbytes) != 4 {
+						L.RaiseError("ARDUGOTOOLS PROGRAMMING ERROR: incorrect uint24 size!")
+						return 0
+					}
+					// Since it's little endian, we cut off the last byte (the most significant bits)
+					_, err = buf.Write(fullbytes[:3])
+				}
 			} else if typ == "int16" {
 				writebuf(int16(raw))
 			} else if typ == "uint16" {
