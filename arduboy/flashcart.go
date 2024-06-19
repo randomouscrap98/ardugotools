@@ -561,26 +561,29 @@ type HeaderProgram struct {
 	Info      string
 	Sha256    string
 	TotalSize int
+	Address   int
 	Image     string
 }
 
 type HeaderCategory struct {
-	Title string
-	Info  string
-	Image string
-	Slots []*HeaderProgram
+	Title   string
+	Info    string
+	Image   string
+	Address int
+	Slots   []*HeaderProgram
 }
 
 // Given a header, store it in the appropriate place within the 'result'
 // category list. This is a common operation for flashcart metadata scanning.
 // Gives you the location where you can store the image (since both have the
 // generic item)
-func MapHeaderResult(result *[]HeaderCategory, header *FxHeader) (*string, error) {
+func MapHeaderResult(result *[]HeaderCategory, header *FxHeader, addr int) (*string, error) {
 	if header.IsCategory() {
 		*result = append(*result, HeaderCategory{
-			Title: header.Title,
-			Info:  header.Info,
-			Slots: make([]*HeaderProgram, 0),
+			Title:   header.Title,
+			Info:    header.Info,
+			Address: addr,
+			Slots:   make([]*HeaderProgram, 0),
 		})
 		return &(*result)[len(*result)-1].Image, nil
 	} else {
@@ -594,6 +597,7 @@ func MapHeaderResult(result *[]HeaderCategory, header *FxHeader) (*string, error
 			Developer: header.Developer,
 			Info:      header.Info,
 			Sha256:    header.Sha256,
+			Address:   addr,
 			TotalSize: int(header.SlotPages) * FXPageSize,
 		}
 		(*result)[last].Slots = append((*result)[last].Slots, newProgram)
@@ -616,7 +620,7 @@ func ScanFlashcartMeta(sercon io.ReadWriter, getImages bool) ([]HeaderCategory, 
 		default:
 		}
 		// Where to eventually write the completed image (goroutine)
-		writeimg, err := MapHeaderResult(&result, header)
+		writeimg, err := MapHeaderResult(&result, header, addr)
 		if err != nil {
 			return err
 		}
@@ -680,7 +684,11 @@ func ScanFlashcartFileMeta(data io.ReadSeeker, getImages bool) ([]HeaderCategory
 	data.Seek(0, io.SeekStart)
 
 	scanFunc := func(con io.ReadSeeker, header *FxHeader, headerCount int) error {
-		writeimg, err := MapHeaderResult(&result, header)
+		addr, err := con.Seek(0, io.SeekCurrent)
+		if err != nil {
+			return err
+		}
+		writeimg, err := MapHeaderResult(&result, header, int(addr))
 		if err != nil {
 			return err
 		}
