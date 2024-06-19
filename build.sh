@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e
 
+# Before doing anything, let's get rid of dist and build
+rm -rf build
+rm -rf dist
+
 cwd=$(pwd)
 cd arduboy
 go test -v
@@ -18,7 +22,7 @@ build() {
 
 	distdir="$cwd/dist"
 	mkdir -p $distdir
-	zip $distdir/ardugotools_${1}_${2}.zip $builddir/$exename
+	zip -j $distdir/ardugotools_${1}_${2}.zip $builddir/$exename
 }
 
 build windows amd64
