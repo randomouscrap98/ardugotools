@@ -154,13 +154,17 @@ func TestRunLuaFxGenerator_Uint24(t *testing.T) {
 	script := `
 pointers = {}
 table.insert(pointers, field("data1"))
-write("it's something")  			-- 14 bytes
-table.insert(pointers, field("data2"))
+write("it's something")             -- 14 bytes
+myaddr = field("data2")
+assert(myaddr == 14, "address 14, was " .. myaddr)
+table.insert(pointers, myaddr)
 write("it's REALLY something")      -- 21 bytes
 table.insert(pointers, field("data3"))
 write("it's over...")               -- 12 bytes
 field("pointers")
-write(bytes(pointers, "uint24"))    -- 9 bytes
+written = write(bytes(pointers, "uint24"))    -- 9 bytes
+assert(#pointers == 3, "pointers 3, was " .. #pointers)
+assert(written == 9, "written 9, was " .. written)
 `
 
 	var header bytes.Buffer
@@ -180,10 +184,10 @@ write(bytes(pointers, "uint24"))    -- 9 bytes
 	}
 
 	headerstr := header.String()
-	bytes := bin.Bytes()
+	bbs := bin.Bytes()
 
-	if len(bytes) != FXPageSize {
-		t.Fatalf("Expected %d bytes, got %d", FXPageSize, len(bytes))
+	if len(bbs) != FXPageSize {
+		t.Fatalf("Expected %d bytes, got %d", FXPageSize, len(bbs))
 	}
 
 	expectedheaders := []string{
@@ -196,6 +200,17 @@ write(bytes(pointers, "uint24"))    -- 9 bytes
 		if !strings.Contains(headerstr, exp) {
 			t.Fatalf("Didn't write '%s' in header. Header:\n%s", exp, headerstr)
 		}
+	}
+
+	// Now make sure the data even makes sense
+	expected := []byte{0, 0, 0, 14, 0, 0, 35, 0, 0}
+	// There's padding, be careful!!
+	actualbbs := bbs[expectedDataLength-len(expected) : expectedDataLength]
+	if len(actualbbs) != 9 {
+		t.Fatalf("Expected 9 bbs bytes, got %d", len(actualbbs))
+	}
+	if !bytes.Equal(actualbbs, expected[:]) {
+		t.Fatalf("Unexpected pointers in uint24 area: %v", actualbbs)
 	}
 }
 

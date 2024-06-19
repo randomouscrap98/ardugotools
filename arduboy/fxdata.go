@@ -402,7 +402,7 @@ func luaBytes(L *lua.LState) int {
 				// Uint24 is a WHOLE thing...
 				var tempbuf bytes.Buffer
 				err = binary.Write(&tempbuf, binary.LittleEndian, uint32(raw))
-				if err != nil {
+				if err == nil {
 					fullbytes := tempbuf.Bytes()
 					if len(fullbytes) != 4 {
 						L.RaiseError("ARDUGOTOOLS PROGRAMMING ERROR: incorrect uint24 size!")
