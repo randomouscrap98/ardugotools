@@ -129,6 +129,14 @@ diff $minicart $idr/testflashcartreadat.bin
 $tbc flashcart read -o $idr/testflashcartread.bin
 diff <(head -c -256 $minicart) $idr/testflashcartread.bin
 
+# Let's output some html just to make sure it doesn't explode. Also, we
+# want to be sure that the html produced by the device is the same as the
+# one produced for the file.
+$tbc flashcart scan "$tfs/minicart.bin" --html --images >$idr/minicart.html
+$tbc flashcart scan "any" --html --images >$idr/minicart_device.html
+diff <(tail -n +27 $idr/minicart.html) <(tail -n +27 $idr/minicart_device.html)
+# | jq -e 'type=="array" and length==1'
+
 # With the other crap fixed up, let's do an fxdata dev write
 dd if=/dev/urandom of=$idr/testfxdev.bin bs=1 count=111104
 $tbc flashcart writedev any -i $idr/testfxdev.bin

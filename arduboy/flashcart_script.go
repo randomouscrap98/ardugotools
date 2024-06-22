@@ -2,7 +2,7 @@ package arduboy
 
 import (
 	//"fmt"
-	//"io"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -11,13 +11,13 @@ import (
 )
 
 type FlashcartReader struct {
-	File    *os.File
-	Address int // Current address within the flashcart
+	File *os.File
+	//Address int // Current address within the flashcart
 }
 
 type FlashcartWriter struct {
-	File    *os.File
-	Address int // Current address within the flashcart
+	File *os.File
+	//Address int // Current address within the flashcart
 	// TODO: add settings for menu, contrast, screen patching, etc
 }
 
@@ -63,6 +63,79 @@ func (state *FlashcartState) CloseAll() []error {
 	return results
 }
 
+// -----------------------------
+//          FUNCTIONS
+// -----------------------------
+
+func luaParseFlashcart(L *lua.LState, state *FlashcartState) int {
+	relpath := L.ToString(1)
+	preload := L.ToBool(2)
+	filepath := state.FilePath(relpath)
+	// Attempt to open the file first.
+	file, err := os.Open(filepath)
+	if err != nil {
+		L.RaiseError("Error opening flashcart: %s", err)
+		return 0
+	}
+	// Now that we have a working file, we must immediately add it to the
+	// readers. The readers list is automatically cleaned up
+	state.Readers = append(state.Readers, FlashcartReader{
+		File: file,
+	})
+	// WAS going to have an iterator, but functions aren't set up for that.
+	// Simply parse out all the headers using the existing ScanFlashcartFile()
+	var result lua.LTable
+	scanFunc := func(f io.ReadSeeker, header *FxHeader, addr int64, index int) error {
+		var slot lua.LTable
+		slot.RawSetString("title", lua.LString(header.Title))
+		slot.RawSetString("version", lua.LString(header.Version))
+		slot.RawSetString("developer", lua.LString(header.Developer))
+		slot.RawSetString("info", lua.LString(header.Info))
+		slot.RawSetString("is_category", lua.LBool(header.IsCategory()))
+		// Read the image too
+		pullData := func(L *lua.LState) int {
+			// Here, we have access to both the reader and the header. Using these
+			// two, we can seek to the right location, then read the data.
+			//_, err := f.Seek(header.
+			//slot.RawSetString
+			return 0
+		}
+		slot.RawSetString("pull_data", L.NewFunction(pullData))
+		result.RawSetInt(index+1, &slot)
+		if preload {
+			pullData(L)
+		}
+		return nil
+	}
+	_, err = ScanFlashcartFile(file, scanFunc)
+	if err != nil {
+		L.RaiseError("Error scanning flashcart: %s", err)
+		return 0
+	}
+	return 1
+}
+
+func luaNewFlashcart(L *lua.LState, state *FlashcartState) int {
+	relpath := L.ToString(1)
+	filepath := state.FilePath(relpath)
+	// Attempt to open the file first.
+	file, err := os.Create(filepath)
+	if err != nil {
+		L.RaiseError("Error creating new flashcart: %s", err)
+		return 0
+	}
+	// Now that we have a working file, we must immediately add it to the
+	// writers. The writers list is automatically cleaned up
+	state.Writers = append(state.Writers, FlashcartWriter{
+		File: file,
+	})
+	return 1
+}
+
+// -----------------------------
+//            RUN
+// -----------------------------
+
 func RunLuaFlashcartGenerator(script string, arguments []string, dir string) error {
 	state := FlashcartState{
 		Readers:       make([]FlashcartReader, 0),
@@ -76,6 +149,8 @@ func RunLuaFlashcartGenerator(script string, arguments []string, dir string) err
 	defer L.Close()
 
 	setBasicLuaFunctions(L)
+	state.AddFunction("parse_flashcart", luaParseFlashcart, L)
+	state.AddFunction("new_flashcart", luaNewFlashcart, L)
 	// state.AddFunction("file", luaFile, L)
 	// state.AddFunction("image", luaImage, L)
 	// state.AddFunction("address", luaAddress, L)              // current address

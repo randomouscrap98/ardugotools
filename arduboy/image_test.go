@@ -13,6 +13,10 @@ import (
 	"testing"
 )
 
+func tileTestPath(filename string) string {
+	return filepath.Join(fileTestPath("tiles"), filename)
+}
+
 func TestRawToPaletted_Transparent(t *testing.T) {
 	raw := make([]byte, ScreenBytes)
 
@@ -33,22 +37,6 @@ func TestRawToPaletted_Transparent(t *testing.T) {
 			t.Fatalf("Paletted not transparent!")
 		}
 	}
-}
-
-func randomImage(raw []byte, format string, t *testing.T) []byte {
-	_, err := rand.Read(raw)
-	if err != nil {
-		t.Fatalf("Error generating random bytes! %s", err)
-	}
-	p, err := RawToPalettedTitle(raw)
-	if err != nil {
-		t.Fatalf("Error generating paletted! %s", err)
-	}
-	img, err := PalettedToImageTitleBW(p, format)
-	if err != nil {
-		t.Fatalf("Error generating %s! %s", format, err)
-	}
-	return img
 }
 
 func imageToRawTransparent(t *testing.T, format string) {
@@ -150,18 +138,6 @@ func TestSplitImageToTiles_SingleImage(t *testing.T) {
 			t.Fatalf("Single tile not transparent!")
 		}
 	}
-}
-
-func testPath() string {
-	return filepath.Join("..", "testfiles")
-}
-
-func fileTestPath(filename string) string {
-	return filepath.Join(testPath(), filename)
-}
-
-func tileTestPath(filename string) string {
-	return filepath.Join(fileTestPath("tiles"), filename)
 }
 
 func TestSplitImageToTiles_TestFile_NoSpacing(t *testing.T) {

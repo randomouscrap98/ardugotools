@@ -175,3 +175,39 @@ func TestHeaderTransparent_Category(t *testing.T) {
 func TestHeaderTransparent_Game(t *testing.T) {
 	testHeaderTransparent_Any(t, "header_game.bin")
 }
+
+func TestScanFlashcartFileMeta(t *testing.T) {
+	file, err := os.Open(fileTestPath("minicart.bin"))
+	if err != nil {
+		t.Fatalf("Couldn't open test cart: %s", err)
+	}
+	result, err := ScanFlashcartFileMeta(file, true)
+	if err != nil {
+		t.Fatalf("Error scanning flashcart meta: %s", err)
+	}
+	if len(result) != 3 {
+		t.Fatalf("Expected %d categories, got %d", 3, len(result))
+	}
+	slotsPerCategory := []int{0, 6, 4}
+	addr := 0
+	for ci, category := range result {
+		if category.Address != addr {
+			t.Fatalf("Expected category address %d, got %d", addr, category.Address)
+		}
+		// All category lengths are well known
+		expectedSlotSize := FXPageSize + FxHeaderImageLength
+		if category.SlotSize != expectedSlotSize {
+			t.Fatalf("Expected category slotsize %d, got %d", expectedSlotSize, category.SlotSize)
+		}
+		if len(category.Slots) != slotsPerCategory[ci] {
+			t.Fatalf("Expected %d slots in category %d, got %d", slotsPerCategory[ci], ci, len(category.Slots))
+		}
+		addr += category.SlotSize
+		for _, program := range category.Slots {
+			if program.Address != addr {
+				t.Fatalf("Expected program address %d, got %d", addr, program.Address)
+			}
+			addr += program.SlotSize
+		}
+	}
+}

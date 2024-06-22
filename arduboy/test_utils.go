@@ -1,0 +1,31 @@
+package arduboy
+
+import (
+	"crypto/rand"
+	"path/filepath"
+	"testing"
+)
+
+func testPath() string {
+	return filepath.Join("..", "testfiles")
+}
+
+func fileTestPath(filename string) string {
+	return filepath.Join(testPath(), filename)
+}
+
+func randomImage(raw []byte, format string, t *testing.T) []byte {
+	_, err := rand.Read(raw)
+	if err != nil {
+		t.Fatalf("Error generating random bytes! %s", err)
+	}
+	p, err := RawToPalettedTitle(raw)
+	if err != nil {
+		t.Fatalf("Error generating paletted! %s", err)
+	}
+	img, err := PalettedToImageTitleBW(p, format)
+	if err != nil {
+		t.Fatalf("Error generating %s! %s", format, err)
+	}
+	return img
+}
