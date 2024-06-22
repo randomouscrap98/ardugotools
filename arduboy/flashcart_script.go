@@ -1,7 +1,7 @@
 package arduboy
 
 import (
-	//"fmt"
+	"fmt"
 	"io"
 	"log"
 	"os"
@@ -85,33 +85,88 @@ func luaParseFlashcart(L *lua.LState, state *FlashcartState) int {
 	// WAS going to have an iterator, but functions aren't set up for that.
 	// Simply parse out all the headers using the existing ScanFlashcartFile()
 	var result lua.LTable
-	scanFunc := func(f io.ReadSeeker, header *FxHeader, addr int64, index int) error {
+	scanFunc := func(f io.ReadSeeker, header *FxHeader, addr int, index int) error {
+		if header.IsOldFormat() {
+			// TODO: eventually, you will need to support this!
+			return fmt.Errorf("Flashcart is in older format (no DataPages field set); can't parse")
+		}
 		var slot lua.LTable
 		slot.RawSetString("title", lua.LString(header.Title))
 		slot.RawSetString("version", lua.LString(header.Version))
 		slot.RawSetString("developer", lua.LString(header.Developer))
 		slot.RawSetString("info", lua.LString(header.Info))
 		slot.RawSetString("is_category", lua.LBool(header.IsCategory()))
-		// Read the image too
-		pullData := func(L *lua.LState) int {
-			// Here, we have access to both the reader and the header. Using these
-			// two, we can seek to the right location, then read the data.
-			//_, err := f.Seek(header.
-			//slot.RawSetString
-			return 0
+		simpleScan := func(field string, at int, length int) error {
+			raw := make([]byte, length)
+			if length != 0 {
+				err := SeekRead(f, int64(at), raw)
+				if err != nil {
+					return err
+				}
+			}
+			slot.RawSetString(field, lua.LString(string(raw)))
+			return nil
 		}
-		slot.RawSetString("pull_data", L.NewFunction(pullData))
+		// Read the image too (it is safe to seek the file any time)
+		if err := simpleScan("image", addr+FXPageSize, FxHeaderImageLength); err != nil {
+			return err
+		}
+		// Make up a pullData function, which will populate the data fields in
+		// our slot.
+		pullData := func() error {
+			if header.IsCategory() {
+				log.Printf("Tried to pull data for category (ignoring)")
+				return nil
+			}
+			// Read the sketch, which is always doable
+			if err := simpleScan("sketch", int(header.ProgramStart)*FXPageSize, int(header.ProgramPages)*FlashPageSize); err != nil {
+				return err
+			}
+			// Try to read fx data and save, if they exist. But ALWAYS set the fields so
+			// users aren't confused? I don't know...
+			fxDataSize := 0
+			fxSaveSize := 0
+			dataStart := int(header.DataStart) * FXPageSize
+			saveStart := int(header.SaveStart) * FXPageSize
+			if header.HasFxData() {
+				fxDataSize = int(header.DataPages) * FXPageSize
+			}
+			if header.HasFxSave() {
+				fxSaveSize = addr + int(header.SlotPages)*FXPageSize - saveStart
+			}
+			if err := simpleScan("fxdata", dataStart, fxDataSize); err != nil {
+				return err
+			}
+			if err := simpleScan("fxsave", saveStart, fxSaveSize); err != nil {
+				return err
+			}
+			return nil
+		}
+		// Allow users to pull data from the file when needed
+		slot.RawSetString("pull_data", L.NewFunction(func(L *lua.LState) int {
+			err := pullData()
+			if err != nil {
+				L.RaiseError("Error pulling data from slot #%d at %x: %s", index, addr, err)
+			}
+			return 0
+		}))
+		// Assign the table to the right index in the result (1 based)
 		result.RawSetInt(index+1, &slot)
+		// Go ahead and pull in the data NOW if the user requested
 		if preload {
-			pullData(L)
+			return pullData()
 		}
 		return nil
 	}
+	// Actually perform the scan. This will scan through the ENTIRE file, parsing out
+	// the lua tables for every slot. The user will then have access to all the slots
+	// immediately, in case they want to reorder or whatever.
 	_, err = ScanFlashcartFile(file, scanFunc)
 	if err != nil {
 		L.RaiseError("Error scanning flashcart: %s", err)
 		return 0
 	}
+	L.Push(&result)
 	return 1
 }
 

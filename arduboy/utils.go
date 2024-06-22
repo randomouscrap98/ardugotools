@@ -286,3 +286,16 @@ func FindStringDiff(a string, b string) error {
 	}
 	return nil
 }
+
+// Seek to given addr (absolute) and read FULL amount into given buffer
+func SeekRead(f io.ReadSeeker, addr int64, buffer []byte) error {
+	_, err := f.Seek(addr, io.SeekStart)
+	if err != nil {
+		return err
+	}
+	_, err = io.ReadFull(f, buffer)
+	if err != nil {
+		return err
+	}
+	return nil
+}

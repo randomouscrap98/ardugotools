@@ -66,14 +66,19 @@ func (h *FxHeader) IsCategory() bool {
 	return h.ProgramStart == 0xFFFF
 }
 
-// Return sketch, data, and save length respectively
-// func (h *FxHeader) CalculateSizes() (int, int, int) {
-// 	var sketch, data, save int
-//
-// 	total := h.ProgramPages
-//
-// 	return sketch, data, save
-// }
+func (h *FxHeader) HasFxData() bool {
+	return h.DataStart != 0xFFFF
+}
+
+func (h *FxHeader) HasFxSave() bool {
+	return h.SaveStart != 0xFFFF
+}
+
+// We didn't always utilize that data pages field. If there's actual
+// FX data but the data pages field is "unset", this is the old format.
+func (h *FxHeader) IsOldFormat() bool {
+	return h.HasFxData() && h.DataPages == 0xFFFF
+}
 
 // Generate the bytes you can write to the flashcart
 func (header *FxHeader) MakeHeader() ([]byte, error) {
@@ -513,9 +518,8 @@ func ScanFlashcart(sercon io.ReadWriter, headerFunc func(io.ReadWriter, *FxHeade
 	}
 }
 
-// Same as ScanFlashcart but for a file / other file-like readerseeker. No address
-// given, as that can be determined from the ReadSeeker given
-func ScanFlashcartFile(data io.ReadSeeker, headerFunc func(io.ReadSeeker, *FxHeader, int64, int) error) (int, error) {
+// Same as ScanFlashcart but for a file / other file-like readerseeker.
+func ScanFlashcartFile(data io.ReadSeeker, headerFunc func(io.ReadSeeker, *FxHeader, int, int) error) (int, error) {
 	headerCount := 0
 	headerRaw := make([]byte, FxHeaderLength)
 
@@ -546,7 +550,7 @@ ScanFlashcartLoop:
 		}
 
 		// Call the user's function with the current state as we know it
-		err = headerFunc(data, header, startAddress, headerCount)
+		err = headerFunc(data, header, int(startAddress), headerCount)
 		if err != nil {
 			return 0, err
 		}
@@ -707,8 +711,8 @@ func ScanFlashcartFileMeta(data io.ReadSeeker, getImages bool) ([]HeaderCategory
 	imageRaw := make([]byte, ScreenBytes)
 	data.Seek(0, io.SeekStart)
 
-	scanFunc := func(con io.ReadSeeker, header *FxHeader, addr int64, headerCount int) error {
-		writeimg, err := MapHeaderResult(&result, header, int(addr))
+	scanFunc := func(con io.ReadSeeker, header *FxHeader, addr int, headerCount int) error {
+		writeimg, err := MapHeaderResult(&result, header, addr)
 		if err != nil {
 			return err
 		}
