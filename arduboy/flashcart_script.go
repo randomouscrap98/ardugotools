@@ -22,7 +22,7 @@ type FlashcartWriter struct {
 	File         *os.File
 	CategoryId   int
 	Slots        int
-	LastSlotAddr int
+	LastSlotPage uint16
 	//Address int // Current address within the flashcart
 	// TODO: add settings for menu, contrast, screen patching, etc
 	ValidateCategoryStructure bool
@@ -33,7 +33,8 @@ type FlashcartWriter struct {
 func NewFlashcartWriter(file *os.File) *FlashcartWriter {
 	return &FlashcartWriter{
 		File:                      file,
-		LastSlotAddr:              0xFFFF, // first slot always has this as 0xFFFF
+		CategoryId:                -1,     //Start at -1 to make incrementing for categories easier
+		LastSlotPage:              0xFFFF, // first slot always has this as 0xFFFF
 		ValidateCategoryStructure: true,
 		ValidateImageLength:       true,
 		PatchMenu:                 true,
@@ -75,7 +76,13 @@ func (state *FlashcartState) CloseAll() []error {
 	}
 	for _, f := range state.Writers {
 		log.Printf("Closing flashcart writer '%s'", f.File.Name())
-		err := f.File.Close()
+		// Before closing, you need to write the final 1 page of 0xFF
+		_, err := f.File.Write(MakePadding(FXPageSize))
+		if err != nil {
+			log.Printf("ERROR: Couldn't write final page of padding: %s", err)
+			results = append(results, err)
+		}
+		err = f.File.Close()
 		if err != nil {
 			log.Printf("ERROR: Couldn't close pending writer: %s", err)
 			results = append(results, err)
@@ -99,10 +106,11 @@ func calculateHeaderHash(sketch []byte, fxdata []byte) (string, error) {
 
 func (writer *FlashcartWriter) initHeader() FxHeader {
 	return FxHeader{
-		PreviousPage: uint16(writer.LastSlotAddr / FXPageSize),
+		PreviousPage: writer.LastSlotPage,
 		NextPage:     0xFFFF,
 		ProgramStart: 0xFFFF,
 		DataStart:    0xFFFF,
+		DataPages:    0xFFFF, // This is how old programs did it
 		SaveStart:    0xFFFF,
 	}
 }
@@ -150,63 +158,70 @@ func (writer *FlashcartWriter) WriteSlot(L *lua.LState) int {
 		}
 	}
 	if is_category {
-		header.Category = uint8(writer.CategoryId)
 		writer.CategoryId += 1
-	} else if writer.Slots < 2 {
-		if writer.ValidateCategoryStructure {
+	} else {
+		if writer.Slots < 2 && writer.ValidateCategoryStructure {
 			L.RaiseError("First two slots MUST be categories! ")
 			return 0
 		}
-	}
-	// Pre-align all the data.
-	if len(sketch) > 0 {
-		if writer.PatchMenu {
-			// TODO: patch menu if user asks
+		// Pre-align all the data (only if not a category)
+		if len(sketch) > 0 {
+			if writer.PatchMenu {
+				// TODO: patch menu if user asks
+			}
+			sketch = AlignData(sketch, FlashPageSize)
+			pages := len(sketch) / FlashPageSize
+			if pages > 0xFF {
+				// Don't even consider the bootloader, there is a max size for the header
+				L.RaiseError("Sketch in slot %d too large!", writer.Slots)
+				return 0
+			}
+			header.ProgramStart = slotEnd()
+			header.ProgramPages = uint8(pages) // length is PRE fx-padding...
+			sketch = AlignData(sketch, FXPageSize)
+			slotSize += len(sketch)
 		}
-		sketch = AlignData(sketch, FlashPageSize)
-		pages := len(sketch) / FlashPageSize
-		if pages > 0xFF {
-			// Don't even consider the bootloader, there is a max size for the header
-			L.RaiseError("Sketch in slot %d too large!", writer.Slots)
+		if len(fxdata) > 0 {
+			if len(sketch) == 0 {
+				L.RaiseError("FX data without sketch in slot %d!", writer.Slots)
+				return 0
+			}
+			fxdata = AlignData(fxdata, FXPageSize)
+			header.DataStart = slotEnd()
+			header.DataPages = uint16(len(fxdata) / FXPageSize)
+			slotSize += len(fxdata)
+			// MUST patch the sketch to point to this data
+			sketch[0x14] = 0x18
+			sketch[0x15] = 0x95
+			Write2ByteValue(header.DataStart, sketch, 0x16)
+		}
+		if len(fxsave) > 0 {
+			if len(sketch) == 0 {
+				L.RaiseError("FX save without sketch in slot %d!", writer.Slots)
+				return 0
+			}
+			fxsave = AlignData(fxsave, FxSaveAlignment)
+			// Need to align fx save to a 4K boundary. The alignment goes at the
+			// BEGINNING of the save
+			var prealignment int = int(AlignWidth(uint(addr)+uint(slotSize), FxSaveAlignment))
+			fxsave = append(MakePadding(prealignment), fxsave...)
+			slotSize += prealignment
+			header.SaveStart = slotEnd()
+			slotSize += len(fxsave)
+			// MUST patch the sketch to point to this save
+			sketch[0x18] = 0x18
+			sketch[0x19] = 0x95
+			Write2ByteValue(header.SaveStart, sketch, 0x1a)
+		}
+		// ONLY calculate hash if not a category (this is how old tools did it; it doesn't matter much)
+		header.Sha256, err = calculateHeaderHash(sketch, fxdata)
+		if err != nil {
+			L.RaiseError("Couldn't hash header: %s", err)
 			return 0
 		}
-		header.ProgramStart = slotEnd()
-		header.ProgramPages = uint8(pages) // length is PRE fx-padding...
-		sketch = AlignData(sketch, FXPageSize)
-		slotSize += len(sketch)
 	}
-	if len(fxdata) > 0 {
-		if len(sketch) == 0 {
-			L.RaiseError("FX data without sketch in slot %d!", writer.Slots)
-			return 0
-		}
-		fxdata = AlignData(fxdata, FXPageSize)
-		header.DataStart = slotEnd()
-		header.DataPages = uint16(len(fxdata) / FXPageSize)
-		slotSize += len(fxdata)
-		// MUST patch the sketch to point to this data
-		sketch[0x14] = 0x18
-		sketch[0x15] = 0x95
-		Write2ByteValue(header.DataStart, sketch, 0x16)
-	}
-	if len(fxsave) > 0 {
-		if len(sketch) == 0 {
-			L.RaiseError("FX save without sketch in slot %d!", writer.Slots)
-			return 0
-		}
-		fxsave = AlignData(fxsave, FxSaveAlignment)
-		// Need to align fx save to a 4K boundary. The alignment goes at the
-		// BEGINNING of the save
-		var prealignment int = int(AlignWidth(uint(addr)+uint(slotSize), FxSaveAlignment))
-		fxsave = append(MakePadding(prealignment), fxsave...)
-		slotSize += prealignment
-		header.SaveStart = slotEnd()
-		slotSize += len(fxsave)
-		// MUST patch the sketch to point to this save
-		sketch[0x18] = 0x18
-		sketch[0x19] = 0x95
-		Write2ByteValue(header.SaveStart, sketch, 0x1a)
-	}
+	// ALWAYS write the category (it tells which programs are in which category)
+	header.Category = uint8(writer.CategoryId)
 	// Finish up writing header values now that we know all alignments
 	if slotSize&0xFF > 0 {
 		L.RaiseError("ARDUGOTOOLS PROGRAM ERROR: Slot size misaligned: %d", slotSize)
@@ -214,11 +229,6 @@ func (writer *FlashcartWriter) WriteSlot(L *lua.LState) int {
 	}
 	header.SlotPages = uint16(slotSize / FXPageSize)
 	header.NextPage = slotEnd()
-	header.Sha256, err = calculateHeaderHash(sketch, fxdata)
-	if err != nil {
-		L.RaiseError("Couldn't hash header: %s", err)
-		return 0
-	}
 	// Create the header
 	headerraw, err := header.MakeHeader()
 	if err != nil {
@@ -247,7 +257,7 @@ func (writer *FlashcartWriter) WriteSlot(L *lua.LState) int {
 	}
 	log.Printf("Wrote slot %d: '%s' (%d bytes)", writer.Slots, header.Title, slotSize)
 	writer.Slots += 1
-	writer.LastSlotAddr = int(addr)
+	writer.LastSlotPage = uint16(int(addr) / FXPageSize)
 	L.Push(lua.LNumber(slotSize))
 	return 1
 }
