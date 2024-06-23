@@ -159,15 +159,17 @@ func (writer *FlashcartWriter) WriteSlot(L *lua.LState) int {
 		if len(sketch) > 0 {
 			if writer.PatchMenu {
 				// TODO: patch menu if user asks
-				_, message := PatchMenuButtons(sketch)
-				log.Printf(message)
+				patched, message := PatchMenuButtons(sketch)
+				if patched {
+					log.Printf(message)
+				}
 			}
 			if writer.PatchMicroLED {
 				PatchMicroLED(sketch)
 			}
 			patchcount := PatchScreen(sketch, writer.PatchSsd1309, writer.Contrast)
 			if patchcount > 0 {
-				log.Printf("Patched screen parameters (ssd1309: %t, contrast: %x", writer.PatchSsd1309, writer.Contrast)
+				log.Printf("Patched %d screen parameter(s) (ssd1309: %t, contrast: %x)", patchcount, writer.PatchSsd1309, writer.Contrast)
 			}
 			sketch = AlignData(sketch, FlashPageSize)
 			pages := len(sketch) / FlashPageSize
@@ -255,7 +257,7 @@ func (writer *FlashcartWriter) WriteSlot(L *lua.LState) int {
 		L.RaiseError("ARDUGOTOOLS PROGRAM ERROR: Expected to write %d, actually wrote %d", slotSize, totalWritten)
 		return 0
 	}
-	log.Printf("Wrote slot %d: '%s' (%d bytes)\n-- %s", writer.Slots, header.Title, slotSize, header.Info)
+	log.Printf("Wrote slot %d: '%s' (%d bytes)\n", writer.Slots, header.Title, slotSize)
 	writer.Slots += 1
 	writer.LastSlotPage = uint16(int(addr) / FXPageSize)
 	L.Push(lua.LNumber(slotSize))

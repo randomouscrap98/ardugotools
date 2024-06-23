@@ -127,6 +127,9 @@ func PatchMenuButtons(program []byte) (bool, string) {
 
 // Apply a combination of screen patches to the given program
 func PatchScreen(flashdata []byte, ssd1309 bool, contrast int) int {
+	if !ssd1309 && contrast < 0 {
+		return 0
+	}
 	//logging.debug(f"Patching screen data: ssd1309={ssd1309}, contrast={contrast}")
 	lcdBootProgram_addr := 0
 	found := 0
