@@ -17,7 +17,10 @@ type FlashcartReader struct {
 }
 
 type FlashcartWriter struct {
-	File *os.File
+	File         *os.File
+	CategoryId   int
+	Slots        int
+	LastSlotAddr int
 	//Address int // Current address within the flashcart
 	// TODO: add settings for menu, contrast, screen patching, etc
 }
@@ -25,8 +28,8 @@ type FlashcartWriter struct {
 // General tracking for entire lua script (user can open arbitrary flashcarts)
 type FlashcartState struct {
 	FileDirectory string
-	Readers       []FlashcartReader
-	Writers       []FlashcartWriter
+	Readers       []*FlashcartReader
+	Writers       []*FlashcartWriter
 	Arguments     []string
 }
 
@@ -65,6 +68,75 @@ func (state *FlashcartState) CloseAll() []error {
 	return results
 }
 
+// Write the entirety of a slot given as a table as the first param. Should
+// have some expected fields; most the header stuff is calculated in this
+// function though.
+func (writer *FlashcartWriter) WriteSlot(L *lua.LState) int {
+	slot := L.ToTable(1)
+	if slot == nil {
+		L.RaiseError("Must send slot to write_slot!")
+		return 0
+	}
+	addr, err := writer.File.Seek(0, io.SeekCurrent)
+	if err != nil {
+		L.RaiseError("Couldn't determine current seek position on slot %d: %s", writer.Slots, err)
+		return 0
+	}
+	// Addr is now the beginning of the slot. Any other calcs should be
+	// based off this value
+	header := FxHeader{
+		PreviousPage: uint16(writer.LastSlotAddr / FXPageSize),
+		NextPage:     0xFFFF,
+		ProgramStart: 0xFFFF,
+		DataStart:    0xFFFF,
+		SaveStart:    0xFFFF,
+	}
+	var image, sketch, fxdata, fxsave []byte
+	//pullBool(slot, "is_category", func(is bool) { is_category = is })
+	pullString(slot, "title", func(t string) { header.Title = t })
+	pullString(slot, "version", func(v string) { header.Version = v })
+	pullString(slot, "developer", func(d string) { header.Developer = d })
+	pullString(slot, "info", func(i string) { header.Info = i })
+	pullString(slot, "image", func(i string) { image = []byte(i) })
+	pullString(slot, "sketch", func(s string) { sketch = []byte(s) })
+	pullString(slot, "fxdata", func(d string) { fxdata = []byte(d) })
+	pullString(slot, "fxsave", func(s string) { fxsave = []byte(s) })
+	is_category := len(sketch) == 0
+	if len(image) != FxHeaderImageLength {
+		L.RaiseError("Invalid image length on slot %d!", writer.Slots)
+		return 0
+	}
+	if is_category {
+		header.Category = uint8(writer.CategoryId)
+		writer.CategoryId += 1
+	} else if writer.Slots < 2 {
+		L.RaiseError("First two slots MUST be categories! ")
+		return 0
+	}
+	headerraw, err := header.MakeHeader()
+	if err != nil {
+		L.RaiseError("Couldn't compile header: %s", err)
+		return 0
+	}
+	sw := func(data []byte) bool {
+		if len(data) > 0 {
+			_, err := writer.File.Write(data)
+			if err != nil {
+				L.RaiseError("Couldn't write to flashcart: %s", err)
+				return true
+			}
+		}
+		return false
+	}
+	if sw(headerraw) || sw(image) || sw(sketch) || sw(fxdata) || sw(fxsave) {
+		return 0
+	}
+	writer.Slots += 1
+	writer.LastSlotAddr = int(addr)
+	L.Push(lua.LNumber(int(header.SlotPages) * FXPageSize))
+	return 1
+}
+
 // -----------------------------
 //          FUNCTIONS
 // -----------------------------
@@ -81,7 +153,7 @@ func luaParseFlashcart(L *lua.LState, state *FlashcartState) int {
 	}
 	// Now that we have a working file, we must immediately add it to the
 	// readers. The readers list is automatically cleaned up
-	state.Readers = append(state.Readers, FlashcartReader{
+	state.Readers = append(state.Readers, &FlashcartReader{
 		File: file,
 	})
 	// WAS going to have an iterator, but functions aren't set up for that.
@@ -145,10 +217,10 @@ func luaParseFlashcart(L *lua.LState, state *FlashcartState) int {
 			return nil
 		}
 		// Allow users to pull data from the file when needed
-		slot.RawSetString("pull_data", L.NewFunction(func(L *lua.LState) int {
+		slot.RawSetString("pull_data", L.NewFunction(func(IL *lua.LState) int {
 			err := pullData()
 			if err != nil {
-				L.RaiseError("Error pulling data from slot #%d at %x: %s", index, addr, err)
+				IL.RaiseError("Error pulling data from slot #%d at %x: %s", index, addr, err)
 			}
 			return 0
 		}))
@@ -175,7 +247,7 @@ func luaParseFlashcart(L *lua.LState, state *FlashcartState) int {
 func luaNewFlashcart(L *lua.LState, state *FlashcartState) int {
 	relpath := L.ToString(1)
 	filepath := state.FilePath(relpath)
-	// Attempt to open the file first.
+	// Attempt to create the file first.
 	file, err := os.Create(filepath)
 	if err != nil {
 		L.RaiseError("Error creating new flashcart: %s", err)
@@ -183,9 +255,16 @@ func luaNewFlashcart(L *lua.LState, state *FlashcartState) int {
 	}
 	// Now that we have a working file, we must immediately add it to the
 	// writers. The writers list is automatically cleaned up
-	state.Writers = append(state.Writers, FlashcartWriter{
-		File: file,
-	})
+	writer := FlashcartWriter{
+		File:         file,
+		LastSlotAddr: 0xFFFF, // first slot always has this as 0xFFFF
+	}
+	state.Writers = append(state.Writers, &writer)
+	var result lua.LTable
+	result.RawSetString("write_slot", L.NewFunction(func(IL *lua.LState) int {
+		return writer.WriteSlot(IL)
+	}))
+	L.Push(&result)
 	return 1
 }
 
@@ -202,8 +281,8 @@ func luaGetArguments(L *lua.LState, state *FlashcartState) int {
 
 func RunLuaFlashcartGenerator(script string, arguments []string, dir string) (string, error) {
 	state := FlashcartState{
-		Readers:       make([]FlashcartReader, 0),
-		Writers:       make([]FlashcartWriter, 0),
+		Readers:       make([]*FlashcartReader, 0),
+		Writers:       make([]*FlashcartWriter, 0),
 		FileDirectory: dir,
 		Arguments:     arguments,
 	}
