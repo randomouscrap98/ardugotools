@@ -139,6 +139,13 @@ func MakePadding(length int) []byte {
 	return result
 }
 
+// Add padding to arduboy data to align to given alignment
+func AlignData(data []byte, alignment int) []byte {
+	origLength := len(data)
+	newLength := AlignWidth(uint(origLength), uint(alignment))
+	return append(data, MakePadding(int(newLength)-origLength)...)
+}
+
 // Produce an md5 string from given data (a simple shortcut)
 func Md5String(data []byte) string {
 	hash := md5.Sum(data)

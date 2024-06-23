@@ -2,8 +2,10 @@ package arduboy
 
 import (
 	"crypto/rand"
+	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func testPath() string {
@@ -12,6 +14,15 @@ func testPath() string {
 
 func fileTestPath(filename string) string {
 	return filepath.Join(testPath(), filename)
+}
+
+func newRandomFilepath(filename string) (string, error) {
+	err := os.MkdirAll("ignore", 0770)
+	if err != nil {
+		return "", err
+	}
+	filename = time.Now().Format("20060102030405") + "_" + filename
+	return filepath.Abs(filepath.Join("ignore", filename))
 }
 
 func randomImage(raw []byte, format string, t *testing.T) []byte {

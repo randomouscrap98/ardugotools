@@ -2,6 +2,8 @@ package arduboy
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
@@ -23,6 +25,19 @@ type FlashcartWriter struct {
 	LastSlotAddr int
 	//Address int // Current address within the flashcart
 	// TODO: add settings for menu, contrast, screen patching, etc
+	ValidateCategoryStructure bool
+	ValidateImageLength       bool
+	PatchMenu                 bool
+}
+
+func NewFlashcartWriter(file *os.File) *FlashcartWriter {
+	return &FlashcartWriter{
+		File:                      file,
+		LastSlotAddr:              0xFFFF, // first slot always has this as 0xFFFF
+		ValidateCategoryStructure: true,
+		ValidateImageLength:       true,
+		PatchMenu:                 true,
+	}
 }
 
 // General tracking for entire lua script (user can open arbitrary flashcarts)
@@ -36,7 +51,7 @@ type FlashcartState struct {
 // Get full path to given file requested by user. The system has a way to set
 // the "working directory" for the whole script, that's all
 func (state *FlashcartState) FilePath(path string) string {
-	if state.FileDirectory == "" {
+	if state.FileDirectory == "" || filepath.IsAbs(path) {
 		return path
 	}
 	return filepath.Join(state.FileDirectory, path)
@@ -59,6 +74,7 @@ func (state *FlashcartState) CloseAll() []error {
 		}
 	}
 	for _, f := range state.Writers {
+		log.Printf("Closing flashcart writer '%s'", f.File.Name())
 		err := f.File.Close()
 		if err != nil {
 			log.Printf("ERROR: Couldn't close pending writer: %s", err)
@@ -66,6 +82,29 @@ func (state *FlashcartState) CloseAll() []error {
 		}
 	}
 	return results
+}
+
+func calculateHeaderHash(sketch []byte, fxdata []byte) (string, error) {
+	hasher := sha256.New()
+	_, err := hasher.Write(sketch)
+	if err != nil {
+		return "", err
+	}
+	_, err = hasher.Write(fxdata)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hasher.Sum(nil)), nil
+}
+
+func (writer *FlashcartWriter) initHeader() FxHeader {
+	return FxHeader{
+		PreviousPage: uint16(writer.LastSlotAddr / FXPageSize),
+		NextPage:     0xFFFF,
+		ProgramStart: 0xFFFF,
+		DataStart:    0xFFFF,
+		SaveStart:    0xFFFF,
+	}
 }
 
 // Write the entirety of a slot given as a table as the first param. Should
@@ -84,12 +123,10 @@ func (writer *FlashcartWriter) WriteSlot(L *lua.LState) int {
 	}
 	// Addr is now the beginning of the slot. Any other calcs should be
 	// based off this value
-	header := FxHeader{
-		PreviousPage: uint16(writer.LastSlotAddr / FXPageSize),
-		NextPage:     0xFFFF,
-		ProgramStart: 0xFFFF,
-		DataStart:    0xFFFF,
-		SaveStart:    0xFFFF,
+	header := writer.initHeader()
+	var slotSize = FXPageSize + FxHeaderImageLength
+	slotEnd := func() uint16 {
+		return uint16((int(addr) + slotSize) / FXPageSize)
 	}
 	var image, sketch, fxdata, fxsave []byte
 	//pullBool(slot, "is_category", func(is bool) { is_category = is })
@@ -103,37 +140,115 @@ func (writer *FlashcartWriter) WriteSlot(L *lua.LState) int {
 	pullString(slot, "fxsave", func(s string) { fxsave = []byte(s) })
 	is_category := len(sketch) == 0
 	if len(image) != FxHeaderImageLength {
-		L.RaiseError("Invalid image length on slot %d!", writer.Slots)
-		return 0
+		if writer.ValidateImageLength {
+			L.RaiseError("Invalid image length on slot %d!", writer.Slots)
+			return 0
+		} else if len(image) < FxHeaderImageLength {
+			image = AlignData(image, FxHeaderImageLength)
+		} else {
+			image = image[:FxHeaderImageLength]
+		}
 	}
 	if is_category {
 		header.Category = uint8(writer.CategoryId)
 		writer.CategoryId += 1
 	} else if writer.Slots < 2 {
-		L.RaiseError("First two slots MUST be categories! ")
+		if writer.ValidateCategoryStructure {
+			L.RaiseError("First two slots MUST be categories! ")
+			return 0
+		}
+	}
+	// Pre-align all the data.
+	if len(sketch) > 0 {
+		if writer.PatchMenu {
+			// TODO: patch menu if user asks
+		}
+		sketch = AlignData(sketch, FlashPageSize)
+		pages := len(sketch) / FlashPageSize
+		if pages > 0xFF {
+			// Don't even consider the bootloader, there is a max size for the header
+			L.RaiseError("Sketch in slot %d too large!", writer.Slots)
+			return 0
+		}
+		header.ProgramStart = slotEnd()
+		header.ProgramPages = uint8(pages) // length is PRE fx-padding...
+		sketch = AlignData(sketch, FXPageSize)
+		slotSize += len(sketch)
+	}
+	if len(fxdata) > 0 {
+		if len(sketch) == 0 {
+			L.RaiseError("FX data without sketch in slot %d!", writer.Slots)
+			return 0
+		}
+		fxdata = AlignData(fxdata, FXPageSize)
+		header.DataStart = slotEnd()
+		header.DataPages = uint16(len(fxdata) / FXPageSize)
+		slotSize += len(fxdata)
+		// MUST patch the sketch to point to this data
+		sketch[0x14] = 0x18
+		sketch[0x15] = 0x95
+		Write2ByteValue(header.DataStart, sketch, 0x16)
+	}
+	if len(fxsave) > 0 {
+		if len(sketch) == 0 {
+			L.RaiseError("FX save without sketch in slot %d!", writer.Slots)
+			return 0
+		}
+		fxsave = AlignData(fxsave, FxSaveAlignment)
+		// Need to align fx save to a 4K boundary. The alignment goes at the
+		// BEGINNING of the save
+		var prealignment int = int(AlignWidth(uint(addr)+uint(slotSize), FxSaveAlignment))
+		fxsave = append(MakePadding(prealignment), fxsave...)
+		slotSize += prealignment
+		header.SaveStart = slotEnd()
+		slotSize += len(fxsave)
+		// MUST patch the sketch to point to this save
+		sketch[0x18] = 0x18
+		sketch[0x19] = 0x95
+		Write2ByteValue(header.SaveStart, sketch, 0x1a)
+	}
+	// Finish up writing header values now that we know all alignments
+	if slotSize&0xFF > 0 {
+		L.RaiseError("ARDUGOTOOLS PROGRAM ERROR: Slot size misaligned: %d", slotSize)
 		return 0
 	}
+	header.SlotPages = uint16(slotSize / FXPageSize)
+	header.NextPage = slotEnd()
+	header.Sha256, err = calculateHeaderHash(sketch, fxdata)
+	if err != nil {
+		L.RaiseError("Couldn't hash header: %s", err)
+		return 0
+	}
+	// Create the header
 	headerraw, err := header.MakeHeader()
 	if err != nil {
 		L.RaiseError("Couldn't compile header: %s", err)
 		return 0
 	}
+	totalWritten := 0
+	// Write out all the individual blocks of data
 	sw := func(data []byte) bool {
 		if len(data) > 0 {
-			_, err := writer.File.Write(data)
+			written, err := writer.File.Write(data)
 			if err != nil {
 				L.RaiseError("Couldn't write to flashcart: %s", err)
 				return true
 			}
+			totalWritten += written
 		}
 		return false
 	}
 	if sw(headerraw) || sw(image) || sw(sketch) || sw(fxdata) || sw(fxsave) {
 		return 0
 	}
+	if totalWritten != slotSize {
+		L.RaiseError("ARDUGOTOOLS PROGRAM ERROR: Expected to write %d, actually wrote %d", slotSize, totalWritten)
+		return 0
+	}
+	log.Printf("Wrote slot %d: '%s' (%d bytes)", writer.Slots, header.Title, slotSize)
 	writer.Slots += 1
 	writer.LastSlotAddr = int(addr)
-	L.Push(lua.LNumber(int(header.SlotPages) * FXPageSize))
+	L.Push(lua.LNumber(slotSize))
 	return 1
 }
 
@@ -246,20 +361,18 @@ func luaParseFlashcart(L *lua.LState, state *FlashcartState) int {
 
 func luaNewFlashcart(L *lua.LState, state *FlashcartState) int {
 	relpath := L.ToString(1)
-	filepath := state.FilePath(relpath)
+	fp := state.FilePath(relpath)
+	log.Printf("Opening new flashcart: %s", fp)
 	// Attempt to create the file first.
-	file, err := os.Create(filepath)
+	file, err := os.Create(fp)
 	if err != nil {
 		L.RaiseError("Error creating new flashcart: %s", err)
 		return 0
 	}
 	// Now that we have a working file, we must immediately add it to the
 	// writers. The writers list is automatically cleaned up
-	writer := FlashcartWriter{
-		File:         file,
-		LastSlotAddr: 0xFFFF, // first slot always has this as 0xFFFF
-	}
-	state.Writers = append(state.Writers, &writer)
+	writer := NewFlashcartWriter(file)
+	state.Writers = append(state.Writers, writer)
 	var result lua.LTable
 	result.RawSetString("write_slot", L.NewFunction(func(IL *lua.LState) int {
 		return writer.WriteSlot(IL)

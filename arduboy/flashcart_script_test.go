@@ -1,6 +1,7 @@
 package arduboy
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
@@ -67,5 +68,31 @@ end
 		if lines[i] != expected[i] {
 			t.Fatalf("Expected at [%d] '%s', got '%s'", i, expected[i], lines[i])
 		}
+	}
+}
+
+func TestRunLuaFlashcartGenerator_ReadWriteEquivalent(t *testing.T) {
+	script := `
+a = arguments()
+slots = parse_flashcart("minicart.bin", true)
+newcart = new_flashcart(a)
+for i,v in ipairs(slots) do
+  newcart.write_slot(v)
+end
+  `
+	testpath, err := newRandomFilepath("newcart.bin")
+	if err != nil {
+		t.Fatalf("Couldn't get path to test file: %s", err)
+	}
+
+	arguments := []string{testpath}
+	_, err = RunLuaFlashcartGenerator(script, arguments, testPath())
+	if err != nil {
+		t.Fatalf("Couldn't run flashcart generator: %s", err)
+	}
+
+	_, err = os.Stat(testpath)
+	if err != nil {
+		t.Fatalf("Couldn't stat test file %s: %s", testpath, err)
 	}
 }
