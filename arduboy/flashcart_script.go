@@ -2,8 +2,6 @@ package arduboy
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
@@ -28,6 +26,9 @@ type FlashcartWriter struct {
 	ValidateCategoryStructure bool
 	ValidateImageLength       bool
 	PatchMenu                 bool
+	PatchMicroLED             bool
+	PatchSsd1309              bool
+	Contrast                  int
 }
 
 func NewFlashcartWriter(file *os.File) *FlashcartWriter {
@@ -38,6 +39,9 @@ func NewFlashcartWriter(file *os.File) *FlashcartWriter {
 		ValidateCategoryStructure: true,
 		ValidateImageLength:       true,
 		PatchMenu:                 true,
+		PatchMicroLED:             false,
+		PatchSsd1309:              false,
+		Contrast:                  CONTRAST_NOCHANGE,
 	}
 }
 
@@ -89,19 +93,6 @@ func (state *FlashcartState) CloseAll() []error {
 		}
 	}
 	return results
-}
-
-func calculateHeaderHash(sketch []byte, fxdata []byte) (string, error) {
-	hasher := sha256.New()
-	_, err := hasher.Write(sketch)
-	if err != nil {
-		return "", err
-	}
-	_, err = hasher.Write(fxdata)
-	if err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
 func (writer *FlashcartWriter) initHeader() FxHeader {
@@ -168,6 +159,15 @@ func (writer *FlashcartWriter) WriteSlot(L *lua.LState) int {
 		if len(sketch) > 0 {
 			if writer.PatchMenu {
 				// TODO: patch menu if user asks
+				_, message := PatchMenuButtons(sketch)
+				log.Printf(message)
+			}
+			if writer.PatchMicroLED {
+				PatchMicroLED(sketch)
+			}
+			patchcount := PatchScreen(sketch, writer.PatchSsd1309, writer.Contrast)
+			if patchcount > 0 {
+				log.Printf("Patched screen parameters (ssd1309: %t, contrast: %x", writer.PatchSsd1309, writer.Contrast)
 			}
 			sketch = AlignData(sketch, FlashPageSize)
 			pages := len(sketch) / FlashPageSize

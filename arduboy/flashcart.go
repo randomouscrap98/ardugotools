@@ -2,6 +2,7 @@ package arduboy
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
@@ -188,6 +189,19 @@ func ParseHeader(data []byte) (*FxHeader, []byte, error) {
 	}
 
 	return &result, data[FxHeaderLength:], nil
+}
+
+func calculateHeaderHash(sketch []byte, fxdata []byte) (string, error) {
+	hasher := sha256.New()
+	_, err := hasher.Write(sketch)
+	if err != nil {
+		return "", err
+	}
+	_, err = hasher.Write(fxdata)
+	if err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(hasher.Sum(nil)), nil
 }
 
 // Read any portion of flashcart at given address. Not performant at all
