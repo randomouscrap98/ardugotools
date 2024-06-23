@@ -1,6 +1,7 @@
 package arduboy
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"log"
@@ -26,6 +27,7 @@ type FlashcartState struct {
 	FileDirectory string
 	Readers       []FlashcartReader
 	Writers       []FlashcartWriter
+	Arguments     []string
 }
 
 // Get full path to given file requested by user. The system has a way to set
@@ -187,15 +189,23 @@ func luaNewFlashcart(L *lua.LState, state *FlashcartState) int {
 	return 1
 }
 
+func luaGetArguments(L *lua.LState, state *FlashcartState) int {
+	for _, arg := range state.Arguments {
+		L.Push(lua.LString(arg))
+	}
+	return len(state.Arguments)
+}
+
 // -----------------------------
 //            RUN
 // -----------------------------
 
-func RunLuaFlashcartGenerator(script string, arguments []string, dir string) error {
+func RunLuaFlashcartGenerator(script string, arguments []string, dir string) (string, error) {
 	state := FlashcartState{
 		Readers:       make([]FlashcartReader, 0),
 		Writers:       make([]FlashcartWriter, 0),
 		FileDirectory: dir,
+		Arguments:     arguments,
 	}
 
 	defer state.CloseAll()
@@ -203,24 +213,28 @@ func RunLuaFlashcartGenerator(script string, arguments []string, dir string) err
 	L := lua.NewState()
 	defer L.Close()
 
+	var outputBuffer bytes.Buffer
+
 	setBasicLuaFunctions(L)
+	L.SetGlobal("log", L.NewFunction(func(L *lua.LState) int {
+		n := L.GetTop()
+		for i := 1; i <= n; i++ {
+			outputBuffer.WriteString(L.CheckString(i))
+			if i != n {
+				outputBuffer.WriteString("\t")
+			}
+		}
+		outputBuffer.WriteString("\n")
+		return 0
+	}))
 	state.AddFunction("parse_flashcart", luaParseFlashcart, L)
 	state.AddFunction("new_flashcart", luaNewFlashcart, L)
-	// state.AddFunction("file", luaFile, L)
-	// state.AddFunction("image", luaImage, L)
-	// state.AddFunction("address", luaAddress, L)              // current address
-	// state.AddFunction("header", luaHeader, L)                // Write arbitrary header text
-	// state.AddFunction("field", luaField, L)                  // Write header definition for field (begin field)
-	// state.AddFunction("image_helper", luaImageHelper, L)     // write header stuff for image (begin field)
-	// state.AddFunction("raycast_helper", luaRaycastHelper, L) // write header stuff for raycast image (begin field)
-	// state.AddFunction("write", luaWrite, L)                  // Write raw data to bin (no header)
-	// state.AddFunction("pad", luaPad, L)                      // pad data to given alignment
-	// state.AddFunction("begin_save", luaBeginSave, L)         // begin the save section
+	state.AddFunction("arguments", luaGetArguments, L)
 
 	err := L.DoString(script)
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	return nil
+	return string(outputBuffer.Bytes()), nil
 }
