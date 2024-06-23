@@ -205,6 +205,8 @@ func ParseStringArray(data []byte) []string {
 	for len(data) > 0 {
 		next := bytes.IndexByte(data, 0)
 		if next == -1 {
+			// take the rest of the data
+			result = append(result, string(data[:]))
 			break
 		}
 		result = append(result, string(data[:next]))

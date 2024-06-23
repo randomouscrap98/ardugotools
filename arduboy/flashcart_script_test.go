@@ -1,6 +1,7 @@
 package arduboy
 
 import (
+	"bytes"
 	"os"
 	"strings"
 	"testing"
@@ -94,5 +95,19 @@ end
 	_, err = os.Stat(testpath)
 	if err != nil {
 		t.Fatalf("Couldn't stat test file %s: %s", testpath, err)
+	}
+
+	// Compare the two files
+	minibin, err := os.ReadFile(fileTestPath("minicart.bin"))
+	if err != nil {
+		t.Fatalf("Couldn't read minicart.bin: %s", err)
+	}
+	testbin, err := os.ReadFile(testpath)
+	if err != nil {
+		t.Fatalf("Couldn't read %s: %s", testpath, err)
+	}
+
+	if !bytes.Equal(minibin, testbin) {
+		t.Fatalf("Written flashcart not equivalent!")
 	}
 }

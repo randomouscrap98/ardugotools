@@ -255,7 +255,7 @@ func (writer *FlashcartWriter) WriteSlot(L *lua.LState) int {
 		L.RaiseError("ARDUGOTOOLS PROGRAM ERROR: Expected to write %d, actually wrote %d", slotSize, totalWritten)
 		return 0
 	}
-	log.Printf("Wrote slot %d: '%s' (%d bytes)", writer.Slots, header.Title, slotSize)
+	log.Printf("Wrote slot %d: '%s' (%d bytes)\n-- %s", writer.Slots, header.Title, slotSize, header.Info)
 	writer.Slots += 1
 	writer.LastSlotPage = uint16(int(addr) / FXPageSize)
 	L.Push(lua.LNumber(slotSize))

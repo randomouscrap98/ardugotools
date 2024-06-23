@@ -72,3 +72,17 @@ func TestSortedKeys(t *testing.T) {
 		}
 	}
 }
+
+func TestParseStringArray_MissingNullTerm(t *testing.T) {
+	datastr := "some\x00Other and thing\x00it's the final but no 0"
+	results := ParseStringArray([]byte(datastr))
+	if len(results) != 3 {
+		t.Fatalf("Expected 3 results, got %d", len(results))
+	}
+	expected := []string{"some", "Other and thing", "it's the final but no 0"}
+	for i := range expected {
+		if results[i] != expected[i] {
+			t.Fatalf("Expected %s, got %s", expected[i], results[i])
+		}
+	}
+}
