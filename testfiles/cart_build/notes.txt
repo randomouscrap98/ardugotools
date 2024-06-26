@@ -1,0 +1,26 @@
+About:
+-------
+
+These files are used to build an example flashcart, which we can then compare against
+4 variations of prebuilt flashcarts for binary exactness.
+
+The prebuilts were built with the arduboy toolset, which doesn't choose images properly
+(as of yet). But this go toolset DOES choose at least one image in the zip file if the
+proportions are correct, and we pick the first alphabetically. So, we manually picked
+some images that SHOULD be automatically chosen here.
+
+The other images are included in the folder. The arduboy files don't all have info
+added to them, so they should be empty in the resulting flashcart.
+
+Variations:
+-------------
+
+- menu patch only
+- menu + dimmest contrast
+- menu + ssd patch
+- menu + ssd + dimmer contrast
+
+There actually is another patch we could test, but I'm missing that feature from the
+arduboy toolset, and that's the micro led patch. The one we actually care about 
+is the menu patch though, so we should be fine.
+
