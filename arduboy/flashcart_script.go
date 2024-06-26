@@ -1,6 +1,7 @@
 package arduboy
 
 import (
+	"archive/zip"
 	"bytes"
 	"fmt"
 	"io"
@@ -438,6 +439,34 @@ func luaTitleImage(L *lua.LState, state *FlashcartState) int {
 	return 1
 }
 
+func luaPackageReader(L *lua.LState, state *FlashcartState) int {
+	filename := L.ToString(1)
+	//device := L.ToString(2)
+	//exact := L.ToString(3)
+
+	archive, err := zip.OpenReader(state.FilePath(filename))
+	if err != nil {
+		L.RaiseError("Can't open arduboy archive: %s", err)
+		return 0
+	}
+	defer archive.Close()
+
+	var slot lua.LTable
+
+	// Loop through the archive, searching for the info.json file.
+
+	// With the info retrieved, figure out what the heck we need to get out of it.
+	// If there are multiple options for what the user specified as a filter, we must
+	// always quit with an error, because I don't want this tool picking for them.
+	// Exact name always overrides device, so they can pass empty string for one/other
+
+	// then loop through, looking for the files we need for the individual fields,
+	// now that we know exactly what we need
+
+	L.Push(&slot)
+	return 1
+}
+
 // -----------------------------
 //            RUN
 // -----------------------------
@@ -473,6 +502,7 @@ func RunLuaFlashcartGenerator(script string, arguments []string, dir string) (st
 	state.AddFunction("new_flashcart", luaNewFlashcart, L)
 	state.AddFunction("arguments", luaGetArguments, L)
 	state.AddFunction("title_image", luaTitleImage, L)
+	state.AddFunction("package", luaPackageReader, L)
 
 	err := L.DoString(script)
 	if err != nil {

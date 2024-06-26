@@ -126,6 +126,9 @@ newcart.write_slot({
 newcart.write_slot({
   title = "Adventure",
   info = "Go on an adventure! You know you want to! (:)",
+  -- Might as well test to make sure these values don't get written
+  version = "NO NO NO",
+  developer = "PHANTOM",
   image = title_image(t2),
 })
   `
