@@ -400,6 +400,44 @@ func luaGetArguments(L *lua.LState, state *FlashcartState) int {
 	return len(state.Arguments)
 }
 
+// Create the raw bytes for a converted title image
+func luaTitleImage(L *lua.LState, state *FlashcartState) int {
+
+	filename := L.ToString(1)
+	threshold := L.ToInt(6) // The upper bound for black pixels
+
+	// Validation and/or setting the defaults if not set
+	if filename == "" {
+		L.RaiseError("Must provide filename for image!")
+		return 0
+	}
+	if threshold == 0 {
+		threshold = 100
+	}
+
+	file, err := os.Open(state.FilePath(filename))
+	if err != nil {
+		L.RaiseError("Error opening image file: %s", err)
+		return 0
+	}
+	defer file.Close()
+	paletted, err := RawImageToPalettedTitle(file, uint8(threshold))
+	if err != nil {
+		L.RaiseError("Error converting image to title: %s", err)
+		return 0
+	}
+	raw, _, err := PalettedToRaw(paletted, ScreenWidth, ScreenHeight)
+	if err != nil {
+		L.RaiseError("Can't convert title raw: %s", err)
+		return 0
+	}
+
+	log.Printf("Converted image '%s' to title", filename)
+	L.Push(lua.LString(string(raw))) // Actual raw data
+
+	return 1
+}
+
 // -----------------------------
 //            RUN
 // -----------------------------
@@ -434,6 +472,7 @@ func RunLuaFlashcartGenerator(script string, arguments []string, dir string) (st
 	state.AddFunction("parse_flashcart", luaParseFlashcart, L)
 	state.AddFunction("new_flashcart", luaNewFlashcart, L)
 	state.AddFunction("arguments", luaGetArguments, L)
+	state.AddFunction("title_image", luaTitleImage, L)
 
 	err := L.DoString(script)
 	if err != nil {

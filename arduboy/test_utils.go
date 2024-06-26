@@ -8,6 +8,10 @@ import (
 	"time"
 )
 
+const (
+	CartBuilderFolder = "cart_build"
+)
+
 func testPath() string {
 	return filepath.Join("..", "testfiles")
 }

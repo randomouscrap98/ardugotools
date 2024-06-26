@@ -3,6 +3,7 @@ package arduboy
 import (
 	"bytes"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -72,7 +73,7 @@ end
 	}
 }
 
-func TestRunLuaFlashcartGenerator_ReadWriteEquivalent(t *testing.T) {
+func TestRunLuaFlashcartGenerator_SimpleTransparent(t *testing.T) {
 	script := `
 a = arguments()
 slots = parse_flashcart("minicart.bin", true)
@@ -81,7 +82,7 @@ for i,v in ipairs(slots) do
   newcart.write_slot(v)
 end
   `
-	testpath, err := newRandomFilepath("newcart.bin")
+	testpath, err := newRandomFilepath("transparent.bin")
 	if err != nil {
 		t.Fatalf("Couldn't get path to test file: %s", err)
 	}
@@ -109,5 +110,54 @@ end
 
 	if !bytes.Equal(minibin, testbin) {
 		t.Fatalf("Written flashcart not equivalent!")
+	}
+}
+
+// This mostly tests the title image converter
+func TestRunLuaFlashcartGenerator_CategoriesOnly(t *testing.T) {
+	script := `
+a, t1, t2 = arguments()
+newcart = new_flashcart(a)
+newcart.write_slot({
+  title = "Bootloader",
+  info = "That is a legacy computer wowee",
+  image = title_image(t1),
+})
+newcart.write_slot({
+  title = "Adventure",
+  info = "Go on an adventure! You know you want to! (:)",
+  image = title_image(t2),
+})
+  `
+	testpath, err := newRandomFilepath("onlycategories.bin")
+	if err != nil {
+		t.Fatalf("Couldn't get path to test file: %s", err)
+	}
+	title1 := fileTestPath(filepath.Join(CartBuilderFolder, "bootloader.png"))
+	title2 := fileTestPath(filepath.Join(CartBuilderFolder, "games.png"))
+
+	arguments := []string{testpath, title1, title2}
+	_, err = RunLuaFlashcartGenerator(script, arguments, testPath())
+	if err != nil {
+		t.Fatalf("Couldn't run flashcart generator: %s", err)
+	}
+
+	_, err = os.Stat(testpath)
+	if err != nil {
+		t.Fatalf("Couldn't stat test file %s: %s", testpath, err)
+	}
+
+	// Compare the two files
+	expectedbin, err := os.ReadFile(fileTestPath("onlycategories.bin"))
+	if err != nil {
+		t.Fatalf("Couldn't read onlycategories.bin: %s", err)
+	}
+	testbin, err := os.ReadFile(testpath)
+	if err != nil {
+		t.Fatalf("Couldn't read %s: %s", testpath, err)
+	}
+
+	if !bytes.Equal(expectedbin, testbin) {
+		t.Fatalf("Written flashcart not equivalent! %d bytes vs %d", len(testbin), len(expectedbin))
 	}
 }
