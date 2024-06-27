@@ -1,6 +1,7 @@
 package arduboy
 
 import (
+	"archive/zip"
 	"bytes"
 	"os"
 	"path/filepath"
@@ -162,5 +163,21 @@ newcart.write_slot({
 
 	if !bytes.Equal(expectedbin, testbin) {
 		t.Fatalf("Written flashcart not equivalent! %d bytes vs %d", len(testbin), len(expectedbin))
+	}
+}
+
+func TestFindSuitablePackageImage(t *testing.T) {
+	testfile := fileTestPath(filepath.Join(CartBuilderFolder, "MicroCity.arduboy"))
+	archive, err := zip.OpenReader(testfile)
+	if err != nil {
+		t.Fatalf("Couldn't open test archive: %s", err)
+	}
+	defer archive.Close()
+	image, err := FindSuitablePackageImage(archive)
+	if err != nil {
+		t.Fatalf("Couldn't find image file: %s", err)
+	}
+	if image != "screen1.png" {
+		t.Fatalf("Unexpected image: %s vs screen1.png", image)
 	}
 }

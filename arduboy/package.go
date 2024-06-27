@@ -4,8 +4,13 @@ import (
 	"archive/zip"
 	"encoding/json"
 	"fmt"
+	"image"
 	"io"
+	"slices"
 	"strings"
+
+	_ "image/gif"
+	_ "image/png"
 )
 
 const (
@@ -54,3 +59,52 @@ func ReadPackageInfo(archive *zip.ReadCloser) (PackageInfo, error) {
 	}
 	return result, fmt.Errorf("Couldn't find %s in package", PackageInfoFile)
 }
+
+// Read the entirety of the given package file into memory and return it
+func LoadPackageFile(archive *zip.ReadCloser, filename string) ([]byte, error) {
+	for _, f := range archive.File {
+		// Assume they're using windows and thus have no case sensitivity
+		if strings.ToLower(f.Name) == filename {
+			reader, err := f.Open()
+			if err != nil {
+				return nil, err
+			}
+			defer reader.Close()
+			return io.ReadAll(reader)
+		}
+	}
+	return nil, fmt.Errorf("File not found")
+}
+
+// Scan package for the first image alphabetically which matches the aspect ratio.
+func FindSuitablePackageImage(archive *zip.ReadCloser) (string, error) {
+	images := make([]string, 0)
+	for _, f := range archive.File {
+		checkname := strings.ToLower(f.Name)
+		// Assume they're using windows and thus have no case sensitivity
+		if strings.HasSuffix(checkname, ".png") || strings.HasSuffix(checkname, ".gif") {
+			ireader, err := f.Open()
+			if err != nil {
+				return "", err
+			}
+			defer ireader.Close()
+			info, _, err := image.DecodeConfig(ireader)
+			if err != nil {
+				return "", err
+			}
+			// this is exactly the ratio we're looking for
+			if float64(info.Width)/float64(info.Height) == float64(ScreenWidth)/float64(ScreenHeight) {
+				images = append(images, f.Name)
+			}
+		}
+	}
+	if len(images) == 0 {
+		return "", fmt.Errorf("No suitable image found in archive")
+	}
+	slices.Sort(images)
+	return images[0], nil
+}
+
+// func GetPackageReader(archive *zip.ReadCloser, filename string) ([]byte, error) {
+//   archive.
+// }

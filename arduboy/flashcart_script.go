@@ -488,7 +488,13 @@ func luaPackageReader(L *lua.LState, state *FlashcartState) int {
 		return 0
 	}
 
-	//binary := binaries[0]
+	binary := binaries[0]
+
+	// Load the easy stuff
+	if binary.Filename == "" {
+		L.RaiseError("No sketch set for chosen binary")
+		return 0
+	}
 
 	// pullString(slot, "image", func(i string) { image = []byte(i) })
 	// pullString(slot, "sketch", func(s string) { sketch = []byte(s) })
