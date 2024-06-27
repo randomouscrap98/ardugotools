@@ -29,12 +29,12 @@ type PackageInfo struct {
 }
 
 type PackageBinary struct {
-	Title      string `json:"title"`
-	Filename   string `json:"filename"`
-	Device     string `json:"device"`
-	TitleImage string `json:"cartimage"`
-	FlashData  string `json:"flashdata"`
-	FlashSave  string `json:"flashsave"`
+	Title     string `json:"title"`
+	Filename  string `json:"filename"`
+	Device    string `json:"device"`
+	CartImage string `json:"cartimage"`
+	FlashData string `json:"flashdata"`
+	FlashSave string `json:"flashsave"`
 }
 
 func ReadPackageInfo(archive *zip.ReadCloser) (PackageInfo, error) {
@@ -62,18 +62,12 @@ func ReadPackageInfo(archive *zip.ReadCloser) (PackageInfo, error) {
 
 // Read the entirety of the given package file into memory and return it
 func LoadPackageFile(archive *zip.ReadCloser, filename string) ([]byte, error) {
-	for _, f := range archive.File {
-		// Assume they're using windows and thus have no case sensitivity
-		if strings.ToLower(f.Name) == filename {
-			reader, err := f.Open()
-			if err != nil {
-				return nil, err
-			}
-			defer reader.Close()
-			return io.ReadAll(reader)
-		}
+	datareader, err := archive.Open(filename)
+	if err != nil {
+		return nil, err
 	}
-	return nil, fmt.Errorf("File not found")
+	defer datareader.Close()
+	return io.ReadAll(datareader)
 }
 
 // Scan package for the first image alphabetically which matches the aspect ratio.
@@ -106,6 +100,35 @@ func FindSuitablePackageImage(archive *zip.ReadCloser) (string, error) {
 	}
 	slices.Sort(images)
 	return images[0], nil
+}
+
+// Search for a suitable binary within the archive. We try to find a matching
+// binary using either device or title. If neither are set, the only way this function
+// works is if there's only one option.
+func FindSuitableBinary(info *PackageInfo, device string, title string) (*PackageBinary, error) {
+	var binaries []*PackageBinary
+	bnames := make([]string, 0)
+
+	if len(info.Binaries) == 1 && device == "" && title == "" {
+		binaries = info.Binaries
+	} else {
+		binaries := make([]*PackageBinary, 0)
+		for _, pb := range info.Binaries {
+			if strings.ToLower(device) == strings.ToLower(pb.Device) ||
+				strings.ToLower(title) == strings.ToLower(pb.Title) {
+				binaries = append(binaries, pb)
+				bnames = append(bnames, pb.Title)
+			}
+		}
+	}
+
+	if len(binaries) == 0 {
+		return nil, fmt.Errorf("No matching binary")
+	} else if len(binaries) != 1 {
+		return nil, fmt.Errorf("Multiple matching binaries in package: %s", strings.Join(bnames, ","))
+	}
+
+	return binaries[0], nil
 }
 
 // func GetPackageReader(archive *zip.ReadCloser, filename string) ([]byte, error) {

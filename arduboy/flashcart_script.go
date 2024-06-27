@@ -8,7 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"strings"
+	//"strings"
 
 	lua "github.com/yuin/gopher-lua"
 )
@@ -440,12 +440,21 @@ func luaTitleImage(L *lua.LState, state *FlashcartState) int {
 	return 1
 }
 
+// Read a package file and return a pre-made slot
 func luaPackageReader(L *lua.LState, state *FlashcartState) int {
+
 	filename := L.ToString(1)
 	device := L.ToString(2)
 	exact := L.ToString(3)
+	threshold := L.ToInt(4)
 
-	archive, err := zip.OpenReader(state.FilePath(filename))
+	if threshold <= 0 {
+		threshold = 100
+	}
+
+	realfilepath := state.FilePath(filename)
+
+	archive, err := zip.OpenReader(realfilepath)
 	if err != nil {
 		L.RaiseError("Can't open arduboy archive: %s", err)
 		return 0
@@ -469,40 +478,76 @@ func luaPackageReader(L *lua.LState, state *FlashcartState) int {
 	slot.RawSetString("developer", lua.LString(info.Author))
 	slot.RawSetString("version", lua.LString(info.Version))
 
-	binaries := make([]*PackageBinary, 0)
-	bnames := make([]string, 0)
+	binary, err := FindSuitableBinary(&info, device, exact)
+	if err != nil {
+		L.RaiseError("Error in package %s: %s", filename, err)
+		return 0
+	}
 
-	for _, pb := range info.Binaries {
-		if strings.ToLower(device) == strings.ToLower(pb.Device) ||
-			strings.ToLower(exact) == strings.ToLower(pb.Title) {
-			binaries = append(binaries, pb)
-			bnames = append(bnames, pb.Title)
+	// Load the easy stuff
+	sketchreader, err := archive.Open(binary.Filename)
+	if err != nil {
+		L.RaiseError("Couldn't open sketch: %s", err)
+		return 0
+	}
+	defer sketchreader.Close()
+	sketch, err := HexToBin(sketchreader)
+	if err != nil {
+		L.RaiseError("Couldn't convert sketch: %s", err)
+		return 0
+	}
+	slot.RawSetString("sketch", lua.LString(string(sketch)))
+	log.Printf("Package %s sketch: %d bytes", realfilepath, len(sketch))
+
+	// NOTE: WE DO NOT FIX BAD FX DATA! WE DO NOT STRIP THE SAVE OUT!
+	if binary.FlashData != "" {
+		flashdata, err := LoadPackageFile(archive, binary.FlashData)
+		if err != nil {
+			L.RaiseError("Couldn't read flashdata: %s", err)
+			return 0
+		}
+		slot.RawSetString("fxdata", lua.LString(string(flashdata)))
+		log.Printf("Package %s flashdata: %d bytes", realfilepath, len(flashdata))
+	}
+	if binary.FlashSave != "" {
+		flashsave, err := LoadPackageFile(archive, binary.FlashSave)
+		if err != nil {
+			L.RaiseError("Couldn't read flashsave: %s", err)
+			return 0
+		}
+		slot.RawSetString("fxsave", lua.LString(string(flashsave)))
+		log.Printf("Package %s flashsave: %d bytes", realfilepath, len(flashsave))
+	}
+
+	// Try setting an image if one isn't set
+	if binary.CartImage == "" {
+		binary.CartImage, err = FindSuitablePackageImage(archive)
+		if err != nil {
+			log.Printf("Error looking for cart image: %s", err)
 		}
 	}
 
-	if len(binaries) == 0 {
-		L.RaiseError("No matching binary in package '%s'", filename)
-		return 0
-	} else if len(binaries) != 1 {
-		L.RaiseError("Multiple matching binaries in package '%s': %s", filename, strings.Join(bnames, ","))
-		return 0
+	// Load the image
+	if binary.CartImage != "" {
+		imagereader, err := archive.Open(binary.CartImage)
+		if err != nil {
+			L.RaiseError("Can't open cart image: %s", err)
+			return 0
+		}
+		defer imagereader.Close()
+		paletted, err := RawImageToPalettedTitle(imagereader, uint8(threshold))
+		if err != nil {
+			L.RaiseError("Error converting image to title: %s", err)
+			return 0
+		}
+		raw, _, err := PalettedToRaw(paletted, ScreenWidth, ScreenHeight)
+		if err != nil {
+			L.RaiseError("Can't convert title raw: %s", err)
+			return 0
+		}
+		slot.RawSetString("image", lua.LString(string(raw)))
+		log.Printf("Loaded cart image for package %s", realfilepath)
 	}
-
-	binary := binaries[0]
-
-	// Load the easy stuff
-	if binary.Filename == "" {
-		L.RaiseError("No sketch set for chosen binary")
-		return 0
-	}
-
-	// pullString(slot, "image", func(i string) { image = []byte(i) })
-	// pullString(slot, "sketch", func(s string) { sketch = []byte(s) })
-	// pullString(slot, "fxdata", func(d string) { fxdata = []byte(d) })
-	// pullString(slot, "fxsave", func(s string) { fxsave = []byte(s) })
-
-	// then loop through, looking for the files we need for the individual fields,
-	// now that we know exactly what we need
 
 	L.Push(&slot)
 	return 1
