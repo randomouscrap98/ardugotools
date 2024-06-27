@@ -139,6 +139,7 @@ func (writer *FlashcartWriter) WriteSlot(L *lua.LState) int {
 	pullString(slot, "sketch", func(s string) { sketch = []byte(s) })
 	pullString(slot, "fxdata", func(d string) { fxdata = []byte(d) })
 	pullString(slot, "fxsave", func(s string) { fxsave = []byte(s) })
+	//log.Printf("Write initial lengths: s:%d, fd:%d, fs:%d", len(sketch), len(fxdata), len(fxsave))
 	is_category := len(sketch) == 0
 	if len(image) != FxHeaderImageLength {
 		if writer.ValidateImageLength {
@@ -207,11 +208,11 @@ func (writer *FlashcartWriter) WriteSlot(L *lua.LState) int {
 			fxsave = AlignData(fxsave, FxSaveAlignment)
 			// Need to align fx save to a 4K boundary. The alignment goes at the
 			// BEGINNING of the save
-			var prealignment int = int(AlignWidth(uint(addr)+uint(slotSize), FxSaveAlignment))
+			var prealignment int = int(AlignWidth(uint(addr)+uint(slotSize), FxSaveAlignment)) - int(addr) - int(slotSize)
 			fxsave = append(MakePadding(prealignment), fxsave...)
 			slotSize += prealignment
 			header.SaveStart = slotEnd()
-			slotSize += len(fxsave)
+			slotSize += len(fxsave) - prealignment
 			// MUST patch the sketch to point to this save
 			sketch[0x18] = 0x18
 			sketch[0x19] = 0x95
@@ -252,6 +253,7 @@ func (writer *FlashcartWriter) WriteSlot(L *lua.LState) int {
 		}
 		return false
 	}
+	//log.Printf("Write final lengths: h: %d, s:%d, fd:%d, fs:%d", len(headerraw), len(sketch), len(fxdata), len(fxsave))
 	if sw(headerraw) || sw(image) || sw(sketch) || sw(fxdata) || sw(fxsave) {
 		return 0
 	}
@@ -553,7 +555,7 @@ func luaPackageReader(L *lua.LState, state *FlashcartState) int {
 			return 0
 		}
 		slot.RawSetString("image", lua.LString(string(raw)))
-		log.Printf("Loaded cart image for package %s", realfilepath)
+		log.Printf("Loaded cart image for package %s: %d bytes", realfilepath, len(raw))
 	}
 
 	L.Push(&slot)
