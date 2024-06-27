@@ -80,6 +80,9 @@ func LoadPackageFile(archive *zip.ReadCloser, filename string) ([]byte, error) {
 func FindSuitablePackageImage(archive *zip.ReadCloser) (string, error) {
 	images := make([]string, 0)
 	for _, f := range archive.File {
+		if strings.Contains(f.Name, "/") {
+			continue // Don't look at folders deeper than root
+		}
 		checkname := strings.ToLower(f.Name)
 		// Assume they're using windows and thus have no case sensitivity
 		if strings.HasSuffix(checkname, ".png") || strings.HasSuffix(checkname, ".gif") {

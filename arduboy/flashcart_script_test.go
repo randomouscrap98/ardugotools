@@ -167,17 +167,22 @@ newcart.write_slot({
 }
 
 func TestFindSuitablePackageImage(t *testing.T) {
-	testfile := fileTestPath(filepath.Join(CartBuilderFolder, "MicroCity.arduboy"))
-	archive, err := zip.OpenReader(testfile)
-	if err != nil {
-		t.Fatalf("Couldn't open test archive: %s", err)
-	}
-	defer archive.Close()
-	image, err := FindSuitablePackageImage(archive)
-	if err != nil {
-		t.Fatalf("Couldn't find image file: %s", err)
-	}
-	if image != "screen1.png" {
-		t.Fatalf("Unexpected image: %s vs screen1.png", image)
+	expected := make(map[string]string)
+	expected["MicroCity.arduboy"] = "screen1.png"
+	expected["TexasHoldEmFX.arduboy"] = "TexasHoldEmFX.png"
+	for fname, exp := range expected {
+		testfile := fileTestPath(filepath.Join(CartBuilderFolder, fname))
+		archive, err := zip.OpenReader(testfile)
+		if err != nil {
+			t.Fatalf("Couldn't open test archive '%s': %s", testfile, err)
+		}
+		defer archive.Close()
+		image, err := FindSuitablePackageImage(archive)
+		if err != nil {
+			t.Fatalf("Error finding image file: %s", err)
+		}
+		if image != exp {
+			t.Fatalf("Unexpected image: %s vs %s", image, exp)
+		}
 	}
 }
