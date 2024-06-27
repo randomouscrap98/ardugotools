@@ -3,6 +3,7 @@ package arduboy
 import (
 	"archive/zip"
 	"bytes"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -156,6 +157,90 @@ newcart.write_slot({
 	if err != nil {
 		t.Fatalf("Couldn't read onlycategories.bin: %s", err)
 	}
+	testbin, err := os.ReadFile(testpath)
+	if err != nil {
+		t.Fatalf("Couldn't read %s: %s", testpath, err)
+	}
+
+	if !bytes.Equal(expectedbin, testbin) {
+		t.Fatalf("Written flashcart not equivalent! %d bytes vs %d", len(testbin), len(expectedbin))
+	}
+}
+
+func loadFullCart(name string, t *testing.T) []byte {
+	testzip := fileTestPath("fullcarts.zip")
+	archive, err := zip.OpenReader(testzip)
+	if err != nil {
+		t.Fatalf("Couldn't open fullcarts.zip: %s", err)
+	}
+	defer archive.Close()
+	f, err := archive.Open(name)
+	if err != nil {
+		t.Fatalf("Couldn't find %s in fullcarts.zip: %s", name, err)
+	}
+	defer f.Close()
+	result, err := io.ReadAll(f)
+	if err != nil {
+		t.Fatalf("Couldn't read %s in fullcarts.zip: %s", name, err)
+	}
+	return result
+}
+
+func TestRunLuaFlashcartGenerator_FullCart(t *testing.T) {
+	script := `
+a, t1, t2, t3, t4, p1, p2, p3 = arguments()
+newcart = new_flashcart(a)
+newcart.write_slot({
+  title = "Bootloader",
+  image = title_image(t1),
+})
+newcart.write_slot({
+  title = "Games",
+  image = title_image(t2),
+})
+-- This is TexasHoldEmFX. There's only one device inside, but we'll specify it 
+-- anyway just in case. The correct image SHOULD be chosen, since there's only one
+newcart.write_slot(package(p1, "ArduboyFX"))
+-- This is microcity. the package is well-formed and there's only ONE device in it
+newcart.write_slot(package(p2))
+newcart.write_slot({
+  title = "Horror",
+  image = title_image(t3),
+})
+-- This is prince of arabia. There is NO image in this package, so we add our own
+slot = package(p3)
+slot.image = title_image(t4)
+newcart.write_slot(slot)
+  `
+	testpath, err := newRandomFilepath("fulltest.bin")
+	if err != nil {
+		t.Fatalf("Couldn't get path to test file: %s", err)
+	}
+
+	titles := []string{"bootloader.png", "games.png", "horror.png", "poa.png"}
+	packages := []string{"TexasHoldEmFX.arduboy", "MicroCity.arduboy", "PrinceOfArabia.V1.3.arduboy"}
+
+	arguments := []string{testpath}
+
+	for _, t := range titles {
+		arguments = append(arguments, fileTestPath(filepath.Join(CartBuilderFolder, t)))
+	}
+	for _, p := range packages {
+		arguments = append(arguments, fileTestPath(filepath.Join(CartBuilderFolder, p)))
+	}
+
+	_, err = RunLuaFlashcartGenerator(script, arguments, testPath())
+	if err != nil {
+		t.Fatalf("Couldn't run flashcart generator: %s", err)
+	}
+
+	_, err = os.Stat(testpath)
+	if err != nil {
+		t.Fatalf("Couldn't stat test file %s: %s", testpath, err)
+	}
+
+	// Compare the two files
+	expectedbin := loadFullCart("cart_menu.bin", t)
 	testbin, err := os.ReadFile(testpath)
 	if err != nil {
 		t.Fatalf("Couldn't read %s: %s", testpath, err)

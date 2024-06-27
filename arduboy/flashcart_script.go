@@ -8,7 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	//"strings"
+	"strings"
 
 	lua "github.com/yuin/gopher-lua"
 )
@@ -256,7 +256,7 @@ func (writer *FlashcartWriter) WriteSlot(L *lua.LState) int {
 		return 0
 	}
 	if totalWritten != slotSize {
-		L.RaiseError("ARDUGOTOOLS PROGRAM ERROR: Expected to write %d, actually wrote %d", slotSize, totalWritten)
+		L.RaiseError("ARDUGOTOOLS PROGRAM ERROR: Expected to write %d for '%s', actually wrote %d", slotSize, header.Title, totalWritten)
 		return 0
 	}
 	log.Printf("Wrote slot %d: '%s' (%d bytes)\n", writer.Slots, header.Title, slotSize)
@@ -462,11 +462,18 @@ func luaPackageReader(L *lua.LState, state *FlashcartState) int {
 	defer archive.Close()
 
 	info, err := ReadPackageInfo(archive)
-
 	if err != nil {
 		L.RaiseError("Couldn't read info.json in package '%s': %s", filename, err)
 		return 0
 	}
+	if info.Title == "" {
+		fname := filepath.Base(realfilepath)
+		info.Title = strings.TrimSuffix(fname, filepath.Ext(fname))
+		log.Printf("WARN: no title set in info.json, defaulting to %s", info.Title)
+	}
+
+	//log.Printf("PACKAGE INFO: %v", info)
+	//log.Printf("PACKAGE[0] INFO: %v", info.Binaries[0])
 
 	// With the info retrieved, figure out what the heck we need to get out of it.
 	// If there are multiple options for what the user specified as a filter, we must

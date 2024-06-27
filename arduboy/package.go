@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"image"
 	"io"
+	//"log"
 	"slices"
 	"strings"
 
@@ -112,15 +113,18 @@ func FindSuitableBinary(info *PackageInfo, device string, title string) (*Packag
 	if len(info.Binaries) == 1 && device == "" && title == "" {
 		binaries = info.Binaries
 	} else {
-		binaries := make([]*PackageBinary, 0)
+		binaries = make([]*PackageBinary, 0)
 		for _, pb := range info.Binaries {
 			if strings.ToLower(device) == strings.ToLower(pb.Device) ||
 				strings.ToLower(title) == strings.ToLower(pb.Title) {
+				//log.Printf("FOUND DEVICE: %s-%s", pb.Device, pb.Title)
 				binaries = append(binaries, pb)
 				bnames = append(bnames, pb.Title)
 			}
 		}
 	}
+
+	//log.Printf("BINARIES: %v", binaries)
 
 	if len(binaries) == 0 {
 		return nil, fmt.Errorf("No matching binary")
