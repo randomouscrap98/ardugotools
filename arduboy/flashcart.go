@@ -192,16 +192,21 @@ func ParseHeader(data []byte) (*FxHeader, []byte, error) {
 }
 
 func calculateHeaderHash(sketch []byte, fxdata []byte) (string, error) {
-	hasher := sha256.New()
-	_, err := hasher.Write(sketch)
-	if err != nil {
-		return "", err
-	}
-	_, err = hasher.Write(fxdata)
-	if err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(hasher.Sum(nil)), nil
+	both := make([]byte, len(sketch)+len(fxdata))
+	copy(both, sketch)
+	copy(both[len(sketch):], fxdata)
+	hash := sha256.Sum256(both)
+	return hex.EncodeToString(hash[:]), nil
+	//hasher := sha256.N.New()
+	//_, err := hasher.Write(sketch)
+	//if err != nil {
+	//	return "", err
+	//}
+	//_, err = hasher.Write(fxdata)
+	//if err != nil {
+	//	return "", err
+	//}
+	//return hex.EncodeToString(hasher.Sum256(nil)), nil
 }
 
 // Read any portion of flashcart at given address. Not performant at all

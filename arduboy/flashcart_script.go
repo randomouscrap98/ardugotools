@@ -158,6 +158,10 @@ func (writer *FlashcartWriter) WriteSlot(L *lua.LState) int {
 			L.RaiseError("First two slots MUST be categories! ")
 			return 0
 		}
+		// Wasteful but it's like 32KiB max... we need the pre-modded sketch to calculate the sha256
+		premodsketch := make([]byte, len(sketch), FlashSize)
+		copy(premodsketch, sketch)
+		premodsketch = AlignData(premodsketch, FXPageSize)
 		// Pre-align all the data (only if not a category)
 		if len(sketch) > 0 {
 			if writer.PatchMenu {
@@ -219,7 +223,7 @@ func (writer *FlashcartWriter) WriteSlot(L *lua.LState) int {
 			Write2ByteValue(header.SaveStart, sketch, 0x1a)
 		}
 		// ONLY calculate hash if not a category (this is how old tools did it; it doesn't matter much)
-		header.Sha256, err = calculateHeaderHash(sketch, fxdata)
+		header.Sha256, err = calculateHeaderHash(premodsketch, fxdata)
 		if err != nil {
 			L.RaiseError("Couldn't hash header: %s", err)
 			return 0
