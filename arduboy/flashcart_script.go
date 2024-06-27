@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	lua "github.com/yuin/gopher-lua"
 )
@@ -441,8 +442,8 @@ func luaTitleImage(L *lua.LState, state *FlashcartState) int {
 
 func luaPackageReader(L *lua.LState, state *FlashcartState) int {
 	filename := L.ToString(1)
-	//device := L.ToString(2)
-	//exact := L.ToString(3)
+	device := L.ToString(2)
+	exact := L.ToString(3)
 
 	archive, err := zip.OpenReader(state.FilePath(filename))
 	if err != nil {
@@ -451,14 +452,48 @@ func luaPackageReader(L *lua.LState, state *FlashcartState) int {
 	}
 	defer archive.Close()
 
-	var slot lua.LTable
+	info, err := ReadPackageInfo(archive)
 
-	// Loop through the archive, searching for the info.json file.
+	if err != nil {
+		L.RaiseError("Couldn't read info.json in package '%s': %s", filename, err)
+		return 0
+	}
 
 	// With the info retrieved, figure out what the heck we need to get out of it.
 	// If there are multiple options for what the user specified as a filter, we must
 	// always quit with an error, because I don't want this tool picking for them.
 	// Exact name always overrides device, so they can pass empty string for one/other
+	var slot lua.LTable
+	slot.RawSetString("title", lua.LString(info.Title))
+	slot.RawSetString("info", lua.LString(info.Description))
+	slot.RawSetString("developer", lua.LString(info.Author))
+	slot.RawSetString("version", lua.LString(info.Version))
+
+	binaries := make([]*PackageBinary, 0)
+	bnames := make([]string, 0)
+
+	for _, pb := range info.Binaries {
+		if strings.ToLower(device) == strings.ToLower(pb.Device) ||
+			strings.ToLower(exact) == strings.ToLower(pb.Title) {
+			binaries = append(binaries, pb)
+			bnames = append(bnames, pb.Title)
+		}
+	}
+
+	if len(binaries) == 0 {
+		L.RaiseError("No matching binary in package '%s'", filename)
+		return 0
+	} else if len(binaries) != 1 {
+		L.RaiseError("Multiple matching binaries in package '%s': %s", filename, strings.Join(bnames, ","))
+		return 0
+	}
+
+	//binary := binaries[0]
+
+	// pullString(slot, "image", func(i string) { image = []byte(i) })
+	// pullString(slot, "sketch", func(s string) { sketch = []byte(s) })
+	// pullString(slot, "fxdata", func(d string) { fxdata = []byte(d) })
+	// pullString(slot, "fxsave", func(s string) { fxsave = []byte(s) })
 
 	// then loop through, looking for the files we need for the individual fields,
 	// now that we know exactly what we need
