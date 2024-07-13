@@ -276,7 +276,7 @@ func TestRunLuaFlashcartGenerator_AddToCategory(t *testing.T) {
 		catnum := i + 1
 		thisbin := loadFullCart(fmt.Sprintf("upsert_cat%d.bin", catnum), t)
 		// Insert into each of the 4 categories
-		newbinpath, err := newRandomFilepath(fmt.Sprintf("upsert_test%d", catnum))
+		newbinpath, err := newRandomFilepath(fmt.Sprintf("upsert_test%d.bin", catnum))
 		if err != nil {
 			t.Fatalf("Couldn't create new file for test %d: %s", catnum, err)
 		}
@@ -285,17 +285,11 @@ func TestRunLuaFlashcartGenerator_AddToCategory(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Couldn't run flashcart generator: %s", err)
 		}
-		_, err = os.Stat(newbinpath)
-		if err != nil {
-			t.Fatalf("Couldn't stat output file %s: %s", newbinpath, err)
-		}
-
 		// Compare the two files
 		testbin, err := os.ReadFile(newbinpath)
 		if err != nil {
 			t.Fatalf("Couldn't read %s: %s", newbinpath, err)
 		}
-
 		if !bytes.Equal(thisbin, testbin) {
 			t.Fatalf("Written flashcart not equivalent! %d bytes vs %d", len(testbin), len(thisbin))
 		}
