@@ -20,6 +20,10 @@ func fileTestPath(filename string) string {
 	return filepath.Join(testPath(), filename)
 }
 
+func fileHelperPath(filename string) string {
+	return filepath.Join("..", "helpers", filename)
+}
+
 func newRandomFilepath(filename string) (string, error) {
 	err := os.MkdirAll("ignore", 0770)
 	if err != nil {
