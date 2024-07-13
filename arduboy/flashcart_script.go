@@ -446,13 +446,19 @@ func luaTitleImage(L *lua.LState, state *FlashcartState) int {
 	return 1
 }
 
-// Read a package file and return a pre-made slot
-func luaPackageReader(L *lua.LState, state *FlashcartState) int {
-
+func luaPackageReader(L *lua.LState, state *FlashcartState, readAny bool) int {
 	filename := L.ToString(1)
 	device := L.ToString(2)
-	exact := L.ToString(3)
-	threshold := L.ToInt(4)
+
+	var exact string
+	var threshold int
+
+	if readAny {
+		threshold = L.ToInt(3)
+	} else {
+		exact = L.ToString(3)
+		threshold = L.ToInt(4)
+	}
 
 	if threshold <= 0 {
 		threshold = 100
@@ -491,7 +497,17 @@ func luaPackageReader(L *lua.LState, state *FlashcartState) int {
 	slot.RawSetString("developer", lua.LString(info.Author))
 	slot.RawSetString("version", lua.LString(info.Version))
 
-	binary, err := FindSuitableBinary(&info, device, exact)
+	var binary *PackageBinary
+
+	if readAny {
+		devices := strings.Split(device, ",")
+		for i := range devices {
+			devices[i] = strings.Trim(devices[i], " ")
+		}
+		binary, err = FindAnyBinary(&info, devices)
+	} else {
+		binary, err = FindSuitableBinary(&info, device, exact)
+	}
 	if err != nil {
 		L.RaiseError("Error in package %s: %s", filename, err)
 		return 0
@@ -601,7 +617,8 @@ func RunLuaFlashcartGenerator(script string, arguments []string, dir string) (st
 	state.AddFunction("new_flashcart", luaNewFlashcart, L)
 	state.AddFunction("arguments", luaGetArguments, L)
 	state.AddFunction("title_image", luaTitleImage, L)
-	state.AddFunction("package", luaPackageReader, L)
+	state.AddFunction("package", func(L *lua.LState, state *FlashcartState) int { return luaPackageReader(L, state, false) }, L)
+	state.AddFunction("packageany", func(L *lua.LState, state *FlashcartState) int { return luaPackageReader(L, state, true) }, L)
 
 	err := L.DoString(script)
 	if err != nil {

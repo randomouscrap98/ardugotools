@@ -107,7 +107,7 @@ func FindSuitablePackageImage(archive *zip.ReadCloser) (string, error) {
 // works is if there's only one option.
 func FindSuitableBinary(info *PackageInfo, device string, title string) (*PackageBinary, error) {
 	var binaries []*PackageBinary
-	bnames := make([]string, 0)
+	var bnames []string
 
 	if len(info.Binaries) == 1 && device == "" && title == "" {
 		binaries = info.Binaries
@@ -129,6 +129,20 @@ func FindSuitableBinary(info *PackageInfo, device string, title string) (*Packag
 	}
 
 	return binaries[0], nil
+}
+
+// A rather dangerous function to find binaries: just get the first binary that matches
+// ANY of the given devices. The order of the devices doesn't matter, just the order
+// of the binaries in the package
+func FindAnyBinary(info *PackageInfo, device []string) (*PackageBinary, error) {
+	for _, pb := range info.Binaries {
+		for _, dv := range device {
+			if strings.ToLower(dv) == strings.ToLower(pb.Device) {
+				return pb, nil
+			}
+		}
+	}
+	return nil, fmt.Errorf("No matching binary")
 }
 
 // func GetPackageReader(archive *zip.ReadCloser, filename string) ([]byte, error) {
