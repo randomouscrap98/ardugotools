@@ -272,6 +272,7 @@ func TestRunLuaFlashcartGenerator_AddToCategory(t *testing.T) {
 		"Depression", "Anxiety", "Null", "Programming",
 	}
 
+	// This is the insert test: the game is new
 	for i, category := range categories {
 		catnum := i + 1
 		thisbin := loadFullCart(fmt.Sprintf("upsert_cat%d.bin", catnum), t)
@@ -293,6 +294,28 @@ func TestRunLuaFlashcartGenerator_AddToCategory(t *testing.T) {
 		if !bytes.Equal(thisbin, testbin) {
 			t.Fatalf("Written flashcart not equivalent! %d bytes vs %d", len(testbin), len(thisbin))
 		}
+	}
+
+	// This is the update test
+	gamepath = fileTestPath(filepath.Join(CartBuilderFolder, "OldMiner_Modded.arduboy"))
+	thisbin := loadFullCart("upsert_updateminer.bin", t)
+	// Insert into each of the 4 categories
+	newbinpath, err := newRandomFilepath("upsert_update.bin")
+	if err != nil {
+		t.Fatalf("Couldn't create new file for update test: %s", err)
+	}
+	arguments := []string{gamepath, "Arduboy,ArduboyFX", categories[1], basebinpath, newbinpath}
+	_, err = RunLuaFlashcartGenerator(string(script), arguments, testPath())
+	if err != nil {
+		t.Fatalf("Couldn't run flashcart generator: %s", err)
+	}
+	// Compare the two files
+	testbin, err := os.ReadFile(newbinpath)
+	if err != nil {
+		t.Fatalf("Couldn't read %s: %s", newbinpath, err)
+	}
+	if !bytes.Equal(thisbin, testbin) {
+		t.Fatalf("Written flashcart not equivalent! %d bytes vs %d", len(testbin), len(thisbin))
 	}
 }
 
