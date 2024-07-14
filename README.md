@@ -95,6 +95,13 @@ In general, you will be writing a script in which you will:
   - Programs can be loaded directly from `.arduboy` files, or created manually
     by loading the individual parts, such as the hex, etc.
 
+### Examples
+
+Currently there is one pure example file: [flashart.lua](testfiles/flashcart.lua).
+It goes over the basics of generating a flashcart using the lua script. There's more
+you can do with this system though, so you may want to look at the flashcart helpers
+for more examples of what you can do.
+
 ### Flashcart helpers
 
 Since generating flashcarts is complicated, I've provided some helper scripts for

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"log"
 	"math"
+	"strings"
 
 	lua "github.com/yuin/gopher-lua"
 )
@@ -217,8 +218,21 @@ func luaDecodeValue(L *lua.LState, value interface{}) lua.LValue {
 	return lua.LNil
 }
 
+func luaHex2Bin(L *lua.LState) int {
+	sketchhex := L.ToString(1)
+	sketch := strings.NewReader(sketchhex)
+	bin, err := HexToBin(sketch)
+	if err != nil {
+		L.RaiseError("Couldn't convert hex to bin: %s", err)
+		return 0
+	}
+	L.Push(lua.LString(string(bin)))
+	return 1
+}
+
 func setBasicLuaFunctions(L *lua.LState) {
 	L.SetGlobal("hex", L.NewFunction(luaHex))
+	L.SetGlobal("hex2bin", L.NewFunction(luaHex2Bin))
 	L.SetGlobal("base64", L.NewFunction(luaBase64))
 	L.SetGlobal("json", L.NewFunction(luaJson))
 	L.SetGlobal("bytes", L.NewFunction(luaBytes))
