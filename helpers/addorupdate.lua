@@ -33,11 +33,11 @@ end
 -- This writes out each slot we find in the old cart to the new one.
 -- If the slot contains our package, we simply
 for _, slot in ipairs(oldcart) do
-	if slot.is_category then
+	if is_category(slot) then
 		if insert_ready then
 			-- We were previously ready for an insert but reached the next category
 			-- and couldn't find the slot for update.
-			print("Inserting new game " .. newpackage.title)
+			log("Inserting new game " .. newpackage.title)
 			insert_newpackage()
 		elseif slot.title == cat then
 			-- This is the category we care about, mark that we're inside it
@@ -47,13 +47,13 @@ for _, slot in ipairs(oldcart) do
 	-- If this is SPECIFICALLY the package to update, write the NEW
 	-- package as the slot. Otherwise, just write what was in the old cart
 	if
-		not slot.is_category
+		not is_category(slot)
 		and insert_ready
 		and slot.title ~= ""
 		and slot.title == newpackage.title
 		and slot.developer == newpackage.developer
 	then
-		print("Updating existing game " .. slot.title)
+		log("Updating existing game " .. slot.title)
 		insert_newpackage()
 	else
 		newcart.write_slot(slot)
@@ -63,7 +63,7 @@ end
 -- Oops, we never inserted the game but the last category was where it was
 -- supposed to go. This is fine
 if insert_ready then
-	print("Inserting new game " .. newpackage.title)
+	log("Inserting new game " .. newpackage.title)
 	insert_newpackage()
 end
 

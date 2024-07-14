@@ -573,6 +573,32 @@ func (c *FlashcartWriteDevCmd) Run() error {
 	return nil
 }
 
+type FlashcartGenerateCmd struct {
+	Infile    string   `arg:"" help:"The flaschart script (required)"`
+	Arguments []string `arg:"" optional:"" help:"Arguments passed to the lua script (optional)"`
+
+	// I think the rest of the args to pass to the script will go here
+	Datadir string `type:"path" short:"d" help:"Folder where data is located (optional)"`
+}
+
+func (c *FlashcartGenerateCmd) Run() error {
+	// Read flashcart lua
+	script, err := os.ReadFile(c.Infile)
+	fatalIfErr("flashcartgenerate", "read lua file", err)
+	// Actually run the flashcart script
+	errout, err := arduboy.RunLuaFlashcartGenerator(string(script), c.Arguments, c.Datadir)
+	// ALWAYS print their logs even if there's an error, so the user can see
+	fmt.Fprintf(os.Stderr, errout)
+	fatalIfErr("flashcartgenerate", "run script", err)
+	// Not much to report
+	result := make(map[string]interface{})
+	result["FlashcartScriptFile"] = c.Infile
+	result["Arguments"] = nil
+	result["Result"] = c.Arguments
+	PrintJson(result)
+	return nil
+}
+
 // **********************************
 // *       CONVERT COMMANDS         *
 // **********************************
@@ -950,6 +976,7 @@ var cli struct {
 		Writedev FlashcartWriteDevCmd `cmd:"" help:"Write dev data to the end of arduboy flashcart"`
 		Readat   FlashcartReadAtCmd   `cmd:"" help:"Read some subset of data from anywhere in the flashcart"`
 		Writeat  FlashcartWriteAtCmd  `cmd:"" help:"Write some arbitrary data anywhere in the flashcart"`
+		Generate FlashcartGenerateCmd `cmd:"" help:"Run a lua script to generate a flashcart"`
 		// Could analyze flashcart to figure out what device it might be for, and whether
 		// it's technically invalid
 	} `cmd:"" help:"Commands which work directly on flashcarts, whether on device or filesystem"`

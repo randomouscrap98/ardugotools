@@ -276,6 +276,39 @@ func (writer *FlashcartWriter) WriteSlot(L *lua.LState) int {
 //          FUNCTIONS
 // -----------------------------
 
+func luaIsCategory(L *lua.LState) int {
+	slot := L.ToTable(1)
+	if slot == nil {
+		L.RaiseError("Must send slot to is_category!")
+		return 0
+	}
+	result := true
+	pullString(slot, "sketch", func(s string) { result = (len(s) == 0) })
+	// Just double check.
+	// WARN: This could produce really strange errors, this is probably bad!
+	// Specifically: if a user loads an existing category slot then adds an
+	// empty sketch to it expecting it to turn it into a non-category. I suppose
+	// that doens't really matter though?
+	if result {
+		// Remember: the function is only run if it was found!
+		pullBool(slot, "was_category", func(b bool) { result = b })
+	}
+	L.Push(lua.LBool(result))
+	return 1
+}
+
+func luaHasFxsave(L *lua.LState) int {
+	slot := L.ToTable(1)
+	if slot == nil {
+		L.RaiseError("Must send slot to has_fxsave!")
+		return 0
+	}
+	result := false
+	pullString(slot, "fxsave", func(s string) { result = len(s) > 0 })
+	L.Push(lua.LBool(result))
+	return 1
+}
+
 func luaParseFlashcart(L *lua.LState, state *FlashcartState) int {
 	relpath := L.ToString(1)
 	preload := L.ToBool(2)
@@ -304,7 +337,7 @@ func luaParseFlashcart(L *lua.LState, state *FlashcartState) int {
 		slot.RawSetString("version", lua.LString(header.Version))
 		slot.RawSetString("developer", lua.LString(header.Developer))
 		slot.RawSetString("info", lua.LString(header.Info))
-		slot.RawSetString("is_category", lua.LBool(header.IsCategory()))
+		slot.RawSetString("was_category", lua.LBool(header.IsCategory()))
 		simpleScan := func(field string, at int, length int) error {
 			raw := make([]byte, length)
 			if length != 0 {
@@ -613,6 +646,8 @@ func RunLuaFlashcartGenerator(script string, arguments []string, dir string) (st
 		outputBuffer.WriteString("\n")
 		return 0
 	}))
+	L.SetGlobal("is_category", L.NewFunction(luaIsCategory))
+	L.SetGlobal("has_fxsave", L.NewFunction(luaHasFxsave))
 	state.AddFunction("parse_flashcart", luaParseFlashcart, L)
 	state.AddFunction("new_flashcart", luaNewFlashcart, L)
 	state.AddFunction("arguments", luaGetArguments, L)

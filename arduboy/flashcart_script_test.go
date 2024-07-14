@@ -36,7 +36,7 @@ slots = parse_flashcart("minicart.bin")
 log("Slot count: " .. #slots)
 for i,v in ipairs(slots) do
   assert(#v.image == 1024)
-  if v.is_category then
+  if is_category(v) then
     log(v.title .. " - Category")
   else
     log(v.title .. " " .. v.version .. " - " .. v.developer)
@@ -282,9 +282,9 @@ func TestRunLuaFlashcartGenerator_AddToCategory(t *testing.T) {
 			t.Fatalf("Couldn't create new file for test %d: %s", catnum, err)
 		}
 		arguments := []string{gamepath, "Arduboy,ArduboyFX", category, basebinpath, newbinpath}
-		_, err = RunLuaFlashcartGenerator(string(script), arguments, testPath())
+		errout, err := RunLuaFlashcartGenerator(string(script), arguments, testPath())
 		if err != nil {
-			t.Fatalf("Couldn't run flashcart generator: %s", err)
+			t.Fatalf("Couldn't run flashcart generator: %s. Log: \n%s", err, errout)
 		}
 		// Compare the two files
 		testbin, err := os.ReadFile(newbinpath)
@@ -304,9 +304,9 @@ func TestRunLuaFlashcartGenerator_AddToCategory(t *testing.T) {
 		t.Fatalf("Couldn't create new file for update test: %s", err)
 	}
 	arguments := []string{gamepath, "Arduboy,ArduboyFX", categories[1], basebinpath, newbinpath}
-	_, err = RunLuaFlashcartGenerator(string(script), arguments, testPath())
+	errout, err := RunLuaFlashcartGenerator(string(script), arguments, testPath())
 	if err != nil {
-		t.Fatalf("Couldn't run flashcart generator: %s", err)
+		t.Fatalf("Couldn't run flashcart generator: %s. Log: \n%s", err, errout)
 	}
 	// Compare the two files
 	testbin, err := os.ReadFile(newbinpath)
@@ -348,9 +348,9 @@ func TestRunLuaFlashcartGenerator_ApplySaves(t *testing.T) {
 		t.Fatalf("Couldn't create new file to store final bin: %s", err)
 	}
 	arguments := []string{basebinpath, newbinpath, outbinpath} //gamepath, "Arduboy,ArduboyFX", categories[1], basebinpath, newbinpath}
-	_, err = RunLuaFlashcartGenerator(string(script), arguments, testPath())
+	errout, err := RunLuaFlashcartGenerator(string(script), arguments, testPath())
 	if err != nil {
-		t.Fatalf("Couldn't run flashcart generator: %s", err)
+		t.Fatalf("Couldn't run flashcart generator: %s. Log: \n%s", err, errout)
 	}
 	// Compare the two files
 	testbin, err := os.ReadFile(outbinpath)

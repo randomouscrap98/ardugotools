@@ -12,35 +12,44 @@
 
 local oldpath, newpath, outpath = arguments()
 
+if oldpath == nil or newpath == nil or outpath == nil then
+	error(
+		"Must provide three arguments to script:\n"
+			.. "* Path to old flashcart (with saves)\n"
+			.. "* Path to new flashcart\n"
+			.. "* Path to save combined flashcart (must not be same as old or new)"
+	)
+end
+
 local oldcart = parse_flashcart(oldpath, false)
 local newcart = parse_flashcart(newpath, true)
 local outcart = new_flashcart(outpath)
 
 for _, slot in ipairs(newcart) do
 	-- Scan for an fxsave in the old cart if this slot at least has a title
-	-- and an fxsave to replace
-	if slot.fxsave and slot.title ~= "" then
-		print("Found fx save for " .. slot.title .. ", scanning for old save")
+	-- and an fxsave to replace.
+	if has_fxsave(slot) and slot.title ~= "" then
+		log("Found fx save for " .. slot.title .. "(" .. #slot.fxsave .. "), scanning for old save")
 		local found = false
 		for _, oldslot in ipairs(oldcart) do
 			if oldslot.title == slot.title and oldslot.developer == slot.developer then
 				oldslot.pull_data()
-				if not oldslot.fxsave or #oldslot.fxsave == 0 then
+				if not has_fxsave(oldslot) then
 					-- This is normal: maybe the game got SUPER updated?
-					print("WARN: found matching slot but it didn't have a save!")
+					log("WARN: found matching slot but it didn't have a save!")
 				elseif #oldslot.fxsave ~= #slot.fxsave then
 					-- Not sure if people want this to be an error or not but it seems
 					-- error-worthy. Usually a save doesn't change sizes
 					error("ERROR: found matching slot but save size doesn't match!")
 				else
-					print("Found old save for " .. slot.title .. ", applying")
+					log("Found old save for " .. slot.title .. ", applying")
 					slot.fxsave = oldslot.fxsave
 					found = true
 				end
 			end
 		end
 		if not found then
-			print("WARN: couldn't find save for " .. slot.title)
+			log("WARN: couldn't find save for " .. slot.title)
 		end
 	end
 	-- At the end of the day, just write out the slots from the new cart
