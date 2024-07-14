@@ -13,6 +13,18 @@
 
 local pkgp, devs, cat, flcp, nflcp = arguments()
 
+if pkgp == nil or devs == nil or cat == nil or flcp == nil or nflcp == nil then
+	error(
+		"Must provide 5 arguments to this script:\n"
+			.. "* Path to .arduboy file to add\n"
+			.. "* Comma-separated list of devices to accept from .arduboy file\n"
+			.. "* Name of category to add arduboy file to \n"
+			.. "* Path to input flashcart to add arduboy file to\n"
+			.. "* Path to output flashcart (must be different than input)\n"
+			.. "Example: 'mygame.arduboy' 'Arduboy,ArduboyFX' 'Action' 'originalflash.bin' 'newflash.bin'"
+	)
+end
+
 local oldcart = parse_flashcart(flcp, true)
 local newcart = new_flashcart(nflcp)
 

@@ -593,8 +593,7 @@ func (c *FlashcartGenerateCmd) Run() error {
 	// Not much to report
 	result := make(map[string]interface{})
 	result["FlashcartScriptFile"] = c.Infile
-	result["Arguments"] = nil
-	result["Result"] = c.Arguments
+	result["Arguments"] = c.Arguments
 	PrintJson(result)
 	return nil
 }
