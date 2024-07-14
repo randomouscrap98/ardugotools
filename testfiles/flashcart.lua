@@ -5,7 +5,7 @@
 -- This script expects to have the data folder set to be inside the
 -- 'testfiles/cart_build' folder. You can set the folder with the -d flag
 -- when running the command. An example full command to this script might be:
--- ardugotools flashcart generate -d testfiles/cart_build script.lua flashcart.bin "Arduboy,ArduboyFX"
+-- ardugotools flashcart generate -d testfiles/cart_build flashcart.lua flashcart.bin "Arduboy,ArduboyFX"
 
 -- To make scripting easier and more reusable, you are able to read arguments
 -- from the command line. These are any arguments that come after the script
