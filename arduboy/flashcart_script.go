@@ -309,6 +309,18 @@ func luaHasFxsave(L *lua.LState) int {
 	return 1
 }
 
+func luaFileFlashcart(L *lua.LState, state *FlashcartState) int {
+	filename := L.ToString(1) // First param is the filename
+	bytes, err := os.ReadFile(state.FilePath(filename))
+	if err != nil {
+		L.RaiseError("Error reading file %s in lua script: %s", filename, err)
+		return 0
+	}
+	log.Printf("Read %d bytes from file %s in lua script", len(bytes), filename)
+	L.Push(lua.LString(string(bytes)))
+	return 1
+}
+
 func luaParseFlashcart(L *lua.LState, state *FlashcartState) int {
 	relpath := L.ToString(1)
 	preload := L.ToBool(2)
@@ -648,6 +660,7 @@ func RunLuaFlashcartGenerator(script string, arguments []string, dir string) (st
 	}))
 	L.SetGlobal("is_category", L.NewFunction(luaIsCategory))
 	L.SetGlobal("has_fxsave", L.NewFunction(luaHasFxsave))
+	state.AddFunction("file", luaFileFlashcart, L)
 	state.AddFunction("parse_flashcart", luaParseFlashcart, L)
 	state.AddFunction("new_flashcart", luaNewFlashcart, L)
 	state.AddFunction("arguments", luaGetArguments, L)

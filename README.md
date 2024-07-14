@@ -4,7 +4,7 @@ A simple, single-binary CLI toolset for Arduboy. Runs on many systems
 
 ## Features
 
-- Scan / analyze for connected devices
+- Scan / analyze connected devices
 - Read / write sketch, eeprom, flashcart
 - Write raw hex (useful for arbitrary flashing)
 - Scan / parse flashcart (on device or filesystem)
@@ -14,8 +14,7 @@ A simple, single-binary CLI toolset for Arduboy. Runs on many systems
 - Read and write arbitrary flashcart data at any location (useful for unique flashcart formats or custom updates)
 - Convert spritesheet or images to code + split to individual images
 - Generate FX data, saves, and headers using powerful lua configuration
-
-(More to come)
+- Generate flashcarts from `.arduboy` packages or any arbitrary data using lua scripting
 
 ## Building / Using 
 
@@ -78,3 +77,65 @@ There are a few example lua scripts. Please see [fxdata.lua](testfiles/fxdata.lu
 thorough rundown of all the available functions as well as a small example. For a far
 more complicated example, see the [slendemake script](testfiles/slendemake_fx/fxdata.lua).
 
+## Flashcart generation
+
+Like FX data generation, you can generate full flashcart files using lua scripting. 
+Generating flashcarts is a complicated task that generally requires writing the entire
+flashcart all at once, meaning you must know precisely how you want your flashcart to 
+look, such as the categories, games, images, and order of everything. This is usually
+best done with a UI, since it is inherently a visual product intended for human use.
+However, for those who want **maximum control** over their flashcarts and are willing
+to put in the effort, I've included a system for generating flashcarts programmatically.
+
+In general, you will be writing a script in which you will:
+- Open a new flashcart file
+- One by one, create slots and add them to the flashcart 
+  - Each slot is a lua table and represents either a category or a program
+  - Categories just need a title and an image
+  - Programs can be loaded directly from `.arduboy` files, or created manually
+    by loading the individual parts, such as the hex, etc.
+
+### Flashcart helpers
+
+Since generating flashcarts is complicated, I've provided some helper scripts for
+common tasks, located in the `helpers` folder. To run these, simply run the 
+`ardugotools flashcart generate` command with the appropriate lua script, and 
+pass in the required arguments. Each script will indicate the required arguments
+if they are used incorrectly, so simply running the script with no arguments is
+enough to see.
+
+#### Add or update helper
+
+Adding or updating an individual game in a flashcart is a very common task. This
+script will attempt to add a `.arduboy` package to a flashcart in the given category.
+If the program already exists in that category, it is instead updated, so you don't 
+have duplicates.
+
+You must specify the package to add, the devices you'll accept from the package, the
+category, the old flashcart, and the new flashcart (can't be the same). Example:
+
+```
+ardugotools flashcart generate helpers/addorupdate.lua mygame.arduboy "Arduboy,ArduboyFX", Action, flashcart.bin newflashcart.bin
+```
+
+You can repeatedly call this script to add many files to a flashcart, though note
+that it's rather inefficient to do so.
+
+#### Apply FX saves from one flashcart into another
+
+Another very common task is updating your flashcart. Doing so in lua is quite a chore,
+so instead I've provided a script which takes fxsaves from one flashcart and applies them
+to another. This way, you can download the flashcart of your choosing, perhaps from the
+[cart builder website](https://www.bloggingadeadhorse.com/cart/Cart.html), then apply
+the saves from your existing flashcart into the new one, letting you have all the latest
+games without losing your saves.
+
+You must specify the base flashcart (that has your saves), the flashcart to apply the saves
+to (will NOT be overwritten), and the new flashcart to write to (can't be either of the 
+other flashcarts). Example:
+
+```
+ardugotools flashcart generate helpers/applysaves.lua myflashcart.bin newflashcart.bin outflashcart.bin
+```
+
+Then you can flash `outflashcart.bin` to your Arduboy.
