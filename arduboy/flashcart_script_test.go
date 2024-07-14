@@ -299,7 +299,6 @@ func TestRunLuaFlashcartGenerator_AddToCategory(t *testing.T) {
 	// This is the update test
 	gamepath = fileTestPath(filepath.Join(CartBuilderFolder, "OldMiner_Modded.arduboy"))
 	thisbin := loadFullCart("upsert_updateminer.bin", t)
-	// Insert into each of the 4 categories
 	newbinpath, err := newRandomFilepath("upsert_update.bin")
 	if err != nil {
 		t.Fatalf("Couldn't create new file for update test: %s", err)
@@ -316,6 +315,50 @@ func TestRunLuaFlashcartGenerator_AddToCategory(t *testing.T) {
 	}
 	if !bytes.Equal(thisbin, testbin) {
 		t.Fatalf("Written flashcart not equivalent! %d bytes vs %d", len(testbin), len(thisbin))
+	}
+}
+
+func TestRunLuaFlashcartGenerator_ApplySaves(t *testing.T) {
+	script, err := os.ReadFile(fileHelperPath("applysaves.lua"))
+	if err != nil {
+		t.Fatalf("Couldn't read lua script: %s", err)
+	}
+	basebin := loadFullCart("fxsave_base.bin", t)
+	basebinpath, err := newRandomFilepath("fxsave_base.bin")
+	if err != nil {
+		t.Fatalf("Couldn't create random file to store base bin: %s", err)
+	}
+	err = os.WriteFile(basebinpath, basebin, 0600)
+	if err != nil {
+		t.Fatalf("Couldn't write file to store base bin: %s", err)
+	}
+	newbin := loadFullCart("fxsave_new.bin", t)
+	newbinpath, err := newRandomFilepath("fxsave_new.bin")
+	if err != nil {
+		t.Fatalf("Couldn't create random file to store new bin: %s", err)
+	}
+	err = os.WriteFile(newbinpath, newbin, 0600)
+	if err != nil {
+		t.Fatalf("Couldn't write file to store new bin: %s", err)
+	}
+	combinedbin := loadFullCart("fxsave_combined.bin", t)
+
+	outbinpath, err := newRandomFilepath("fxsave_combined.bin")
+	if err != nil {
+		t.Fatalf("Couldn't create new file to store final bin: %s", err)
+	}
+	arguments := []string{basebinpath, newbinpath, outbinpath} //gamepath, "Arduboy,ArduboyFX", categories[1], basebinpath, newbinpath}
+	_, err = RunLuaFlashcartGenerator(string(script), arguments, testPath())
+	if err != nil {
+		t.Fatalf("Couldn't run flashcart generator: %s", err)
+	}
+	// Compare the two files
+	testbin, err := os.ReadFile(outbinpath)
+	if err != nil {
+		t.Fatalf("Couldn't read %s: %s", outbinpath, err)
+	}
+	if !bytes.Equal(combinedbin, testbin) {
+		t.Fatalf("Written flashcart not equivalent! %d bytes vs %d", len(testbin), len(combinedbin))
 	}
 }
 

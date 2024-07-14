@@ -25,11 +25,15 @@ for _, slot in ipairs(newcart) do
 		for _, oldslot in ipairs(oldcart) do
 			if oldslot.title == slot.title and oldslot.developer == slot.developer then
 				oldslot.pull_data()
-				if not oldslot.fxsave or #oldslot.fxsave ~= #slot.fxsave then
+				if not oldslot.fxsave or #oldslot.fxsave == 0 then
+					-- This is normal: maybe the game got SUPER updated?
+					print("WARN: found matching slot but it didn't have a save!")
+				elseif #oldslot.fxsave ~= #slot.fxsave then
 					-- Not sure if people want this to be an error or not but it seems
-					-- error-worthy. Usually a save doesn't randomly appear or change sizes
+					-- error-worthy. Usually a save doesn't change sizes
 					error("ERROR: found matching slot but save size doesn't match!")
 				else
+					print("Found old save for " .. slot.title .. ", applying")
 					slot.fxsave = oldslot.fxsave
 					found = true
 				end
