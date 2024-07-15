@@ -669,9 +669,5 @@ func RunLuaFlashcartGenerator(script string, arguments []string, dir string) (st
 	state.AddFunction("packageany", func(L *lua.LState, state *FlashcartState) int { return luaPackageReader(L, state, true) }, L)
 
 	err := L.DoString(script)
-	if err != nil {
-		return "", err
-	}
-
-	return string(outputBuffer.Bytes()), nil
+	return string(outputBuffer.Bytes()), err
 }

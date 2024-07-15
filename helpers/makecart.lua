@@ -23,7 +23,7 @@
 -- * The device list to load from arduboy files
 -- * The path to the output flashcart
 
-local readfolder, devices, outpath = arguments()
+local readfolder, devices, outpath, ignores = arguments()
 
 if readfolder == nil or devices == nil or outpath == nil then
 	error(
@@ -40,6 +40,19 @@ end
 local maindirlist = listdir(readfolder)
 
 local flashcart = new_flashcart(outpath)
+
+-- Check if the directory is ignored. Very slow!
+local function is_ignored(dirname)
+	if ignores == nil then
+		return false
+	end
+	for str in string.gmatch(ignores, "([^,]+)") do
+		if str == dirname then
+			return true
+		end
+	end
+	return false
+end
 
 -- Return the loaded and parsed title image. Returns nil if couldn't find
 local function load_title(dirlist, name)
@@ -71,16 +84,20 @@ end
 add_category("Bootloader", maindirlist)
 
 -- Iterate over all categories. Well, they MIGHT be categories...
-for _, catdir in ipairs(maindirlist) do
-	if not catdir.is_directory then
-		log("Unexpected file: " .. catdir.path)
+for _, catinfo in ipairs(maindirlist) do
+	if is_ignored(catinfo.name) then
+		log("Skipping ignored directory " .. catinfo.name)
+		goto skipdir
+	end
+	if not catinfo.is_directory then
+		log("Unexpected file: " .. catinfo.path)
 		goto skipdir
 	end
 	-- List files within the category. These are most likely the games
-	local catlist = listdir(catdir.path)
-	add_category(catdir.name, catlist)
+	local catlist = listdir(catinfo.path)
+	add_category(catinfo.name, catlist)
 	-- Now iterate over all the stuff inside the category and load appropriate stuff
-	for _, catfile in ipairs(catdir) do
+	for _, catfile in ipairs(catlist) do
 		if catfile.is_directory then
 			-- This is one of those weird folder-based games.
 			log("Non-packaged programs not supported at this time")
@@ -90,12 +107,14 @@ for _, catdir in ipairs(maindirlist) do
 			slot = packageany(catfile.path, devices)
 			if slot.image == nil then
 				-- Try to find an image with the same name as the package.
-				slot.image = load_title(catdir, string.sub(catfile.name, 0, -8) .. "png")
+				testimage = string.sub(catfile.name, 0, -8) .. "png"
+				log("Looking for alternate image in " .. testimage)
+				slot.image = load_title(catlist, testimage)
 			end
 			add_slot(slot)
 		elseif catfile.name ~= "title.png" then
 			-- This is something unexpected!
-			log("Unexpected file: " .. catdir.path)
+			log("Unexpected file: " .. catinfo.path)
 			goto skipfile
 		end
 		::skipfile::

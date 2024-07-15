@@ -406,6 +406,32 @@ func TestRunLuaFlashcartGenerator_ApplySaves(t *testing.T) {
 	}
 }
 
+func TestRunLuaFlashcartGenerator_MakeCart(t *testing.T) {
+	script, err := os.ReadFile(fileHelperPath("makecart.lua"))
+	if err != nil {
+		t.Fatalf("Couldn't read lua script: %s", err)
+	}
+	//combinedbin := loadFullCart("fxsave_combined.bin", t)
+
+	outbinpath, err := newRandomFilepath("makecart.bin")
+	if err != nil {
+		t.Fatalf("Couldn't create new file to store final bin: %s", err)
+	}
+	arguments := []string{testPath(), "Arduboy,ArduboyFX", outbinpath, "ignore,slendemake_fx,tiles"}
+	errout, err := RunLuaFlashcartGenerator(string(script), arguments, "")
+	if err != nil {
+		t.Fatalf("Couldn't run flashcart generator: %s. Log: \n%s", err, errout)
+	}
+	//// Compare the two files
+	//testbin, err := os.ReadFile(outbinpath)
+	//if err != nil {
+	//	t.Fatalf("Couldn't read %s: %s", outbinpath, err)
+	//}
+	//if !bytes.Equal(combinedbin, testbin) {
+	//	t.Fatalf("Written flashcart not equivalent! %d bytes vs %d", len(testbin), len(combinedbin))
+	//}
+}
+
 func TestFindSuitablePackageImage(t *testing.T) {
 	expected := make(map[string]string)
 	expected["MicroCity.arduboy"] = "screen1.png"
