@@ -184,7 +184,7 @@ newcart.write_slot({
 		t.Fatalf("Couldn't get path to test file: %s", err)
 	}
 	title1 := fileTestPath(filepath.Join(CartBuilderFolder, "bootloader.png"))
-	title2 := fileTestPath(filepath.Join(CartBuilderFolder, "games.png"))
+	title2 := fileTestPath(filepath.Join(CartBuilderFolder, "title.png"))
 
 	arguments := []string{testpath, title1, title2}
 	_, err = RunLuaFlashcartGenerator(script, arguments, testPath())
@@ -262,7 +262,7 @@ newcart.write_slot(slot)
 		t.Fatalf("Couldn't get path to test file: %s", err)
 	}
 
-	titles := []string{"bootloader.png", "games.png", "horror.png", "poa.png"}
+	titles := []string{"bootloader.png", "title.png", "horror.png", "PrinceOfArabia.V1.3.png"}
 	packages := []string{"TexasHoldEmFX.arduboy", "MicroCity.arduboy", "PrinceOfArabia.V1.3.arduboy"}
 
 	arguments := []string{testpath}

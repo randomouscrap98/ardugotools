@@ -41,7 +41,7 @@ newcart.write_slot({
 -- so-called "Games" category
 newcart.write_slot({
 	title = "Games",
-	image = title_image("games.png"),
+	image = title_image("title.png"),
 })
 
 -- Now we write programs. We are using the 'packageany' function to load a
@@ -76,7 +76,7 @@ newcart.write_slot({
 -- automatically and use a default image if you wanted to, or generate one
 -- on the fly.
 slot = packageany("PrinceOfArabia.V1.3.arduboy", devices)
-slot.image = title_image("poa.png")
+slot.image = title_image("PrinceOfArabia.V1.3.png")
 newcart.write_slot(slot)
 
 -- You don't need to do anything at the end of the script; when the script
