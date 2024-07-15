@@ -411,7 +411,8 @@ func TestRunLuaFlashcartGenerator_MakeCart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Couldn't read lua script: %s", err)
 	}
-	//combinedbin := loadFullCart("fxsave_combined.bin", t)
+
+	comparebin := loadFullCart("makecart.bin", t)
 
 	outbinpath, err := newRandomFilepath("makecart.bin")
 	if err != nil {
@@ -422,14 +423,14 @@ func TestRunLuaFlashcartGenerator_MakeCart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Couldn't run flashcart generator: %s. Log: \n%s", err, errout)
 	}
-	//// Compare the two files
-	//testbin, err := os.ReadFile(outbinpath)
-	//if err != nil {
-	//	t.Fatalf("Couldn't read %s: %s", outbinpath, err)
-	//}
-	//if !bytes.Equal(combinedbin, testbin) {
-	//	t.Fatalf("Written flashcart not equivalent! %d bytes vs %d", len(testbin), len(combinedbin))
-	//}
+	// Compare the two files
+	testbin, err := os.ReadFile(outbinpath)
+	if err != nil {
+		t.Fatalf("Couldn't read %s: %s", outbinpath, err)
+	}
+	if !bytes.Equal(comparebin, testbin) {
+		t.Fatalf("Written flashcart not equivalent! %d bytes vs %d", len(testbin), len(comparebin))
+	}
 }
 
 func TestFindSuitablePackageImage(t *testing.T) {
