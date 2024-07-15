@@ -146,3 +146,26 @@ ardugotools flashcart generate helpers/applysaves.lua myflashcart.bin newflashca
 ```
 
 Then you can flash `outflashcart.bin` to your Arduboy.
+
+#### Make Cart from folder
+
+If you don't want to write a script yourself to create a custom flashcart, you can instead
+set up a folder with all the categories and games and use `helpers/makecart.lua` to generate
+it for you. The folder must be setup in a certain way; see the comments in 
+[makecart.lua](helpers/makecart.lua) to get started. In general, you simply setup a folder
+where:
+- Each folder inside is a category
+- Each `.arduboy` package within the category folders are games in that category
+- You need a `title.png` at the root of the folder for the "bootloader" image
+- You need a `title.png` at the root of each category for the category image
+- Each package must have some image inside it to use as a title image. If it's missing
+  or if you want to override it, simply place a png file with the same name as the package
+  in the category directory next to the package.
+
+The arguments to pass in are the folder to read from, the devices to choose inside the 
+packages, and the path to save the flashcart binary to. An optional fourth parameter lets
+you indicate ignored folders by name, comma separated. Example:
+
+```
+ardugotools flashcart generate helpers/makecart mycart "Arduboy,ArduboyFX" flashcart.bin "ignore,trash"
+```

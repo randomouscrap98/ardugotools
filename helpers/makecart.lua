@@ -105,11 +105,12 @@ for _, catinfo in ipairs(maindirlist) do
 		elseif string.sub(catfile.name, -8) == ".arduboy" then
 			-- This is a normal arduboy package
 			slot = packageany(catfile.path, devices)
-			if slot.image == nil then
-				-- Try to find an image with the same name as the package.
-				testimage = string.sub(catfile.name, 0, -8) .. "png"
-				log("Looking for alternate image in " .. testimage)
-				slot.image = load_title(catlist, testimage)
+			-- Try to find an image with the same name as the package.
+			local testimage = string.sub(catfile.name, 0, -8) .. "png"
+			local image = load_title(catlist, testimage)
+			if image ~= nil then
+				slot.image = image
+				log("Loaded alternate image in " .. testimage)
 			end
 			add_slot(slot)
 		elseif catfile.name ~= "title.png" then
