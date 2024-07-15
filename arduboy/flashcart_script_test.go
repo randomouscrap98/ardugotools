@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -30,6 +31,50 @@ log(a, b, c)
 	}
 }
 
+// This function is available in all lua runtimes but I test it here
+// because it's where we expect to use it
+func TestRunLuaFlashcartGenerator_ListDir(t *testing.T) {
+	script := `
+mydir = arguments()
+results = listdir(mydir)
+for _, dinfo in ipairs(results) do
+  log(dinfo.name .. "#" .. tostring(dinfo.is_directory) .. "#" .. dinfo.path)
+end
+  `
+
+	arguments := []string{testPath()}
+
+	logs, err := RunLuaFlashcartGenerator(script, arguments, "")
+	if err != nil {
+		t.Fatalf("Error running basic flashcart generator: %s", err)
+	}
+
+	lines := strings.Split(logs, "\n")
+	expected := []string{
+		`cart_build#true#.+?testfiles[/\\]cart_build`,
+		`flashcart\.lua#false#.+?testfiles[/\\]flashcart\.lua`,
+		`tiles#true#.+?testfiles[/\\]tiles`,
+		`uneven\.bin#false#.+?testfiles[/\\]uneven\.bin`,
+	}
+
+	for _, exp := range expected {
+		found := false
+		for _, line := range lines {
+			found, err = regexp.Match(exp, []byte(line))
+			if err != nil {
+				t.Fatalf("Error matching regex: %s", err)
+			}
+			if found {
+				break
+			}
+		}
+		if !found {
+			fmt.Print(logs)
+			t.Fatalf("Couldn't find expected line: %s", exp)
+		}
+	}
+}
+
 func TestRunLuaFlashcartGenerator_ReadBasic(t *testing.T) {
 	script := `
 slots = parse_flashcart("minicart.bin")
@@ -44,7 +89,6 @@ for i,v in ipairs(slots) do
 end
   `
 
-	//arguments := []string{"what", "how", "this -- is == weird"}
 	logs, err := RunLuaFlashcartGenerator(script, nil, testPath())
 	if err != nil {
 		t.Fatalf("Error running basic read flashcart generator: %s", err)

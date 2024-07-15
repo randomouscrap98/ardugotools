@@ -10,6 +10,8 @@ import (
 	"encoding/json"
 	"log"
 	"math"
+	"os"
+	"path/filepath"
 	"strings"
 
 	lua "github.com/yuin/gopher-lua"
@@ -230,11 +232,39 @@ func luaHex2Bin(L *lua.LState) int {
 	return 1
 }
 
+// Get basic info about the entries in a directory, in "filesystem" order
+func luaListDir(L *lua.LState) int {
+	path := L.ToString(1)
+	entries, err := os.ReadDir(path)
+	if err != nil {
+		L.RaiseError("Couldn't read directory: %s", err)
+		return 0
+	}
+	var result lua.LTable
+	for i, entry := range entries {
+		var entrytable lua.LTable
+		name := entry.Name()
+		thispath := filepath.Join(path, name)
+		fullpath, err := filepath.Abs(thispath)
+		if err != nil {
+			L.RaiseError("Couldn't get abs path of %s: %s", thispath, err)
+			return 0
+		}
+		entrytable.RawSetString("name", lua.LString(name))
+		entrytable.RawSetString("path", lua.LString(fullpath))
+		entrytable.RawSetString("is_directory", lua.LBool(entry.IsDir()))
+		result.RawSetInt(i+1, &entrytable)
+	}
+	L.Push(&result)
+	return 1
+}
+
 func setBasicLuaFunctions(L *lua.LState) {
 	L.SetGlobal("hex", L.NewFunction(luaHex))
 	L.SetGlobal("hex2bin", L.NewFunction(luaHex2Bin))
 	L.SetGlobal("base64", L.NewFunction(luaBase64))
 	L.SetGlobal("json", L.NewFunction(luaJson))
 	L.SetGlobal("bytes", L.NewFunction(luaBytes))
+	L.SetGlobal("listdir", L.NewFunction(luaListDir))
 	L.SetGlobal("image_resize", L.NewFunction(luaImageResize))
 }
