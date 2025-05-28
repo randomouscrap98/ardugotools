@@ -315,10 +315,11 @@ func WriteFlashcart(sercon io.ReadWriter, address int, data []byte, logProgress 
 	for i := 0; i < len(data); i += FXBlockSize {
 		//var rgbState uint8 = LEDCtrlBtnOff | uint8(i&0b111)
 		//SetRgbButtonState(sercon, rgbState)
+		flashcart_page := uint16((blockAlignedAddress + i) / FXPageSize)
 		if logProgress {
-			log.Printf("Writing block# %d at page %d", blocknum, i)
+			log.Printf("Writing block# %d at page %d", blocknum, flashcart_page)
 		}
-		rwep.WritePass(AddressCommandFlashcartPage(uint16((blockAlignedAddress + i) / FXPageSize)))
+		rwep.WritePass(AddressCommandFlashcartPage(flashcart_page))
 		rwep.ReadPass(onebyte)
 		rwep.WritePass(WriteFlashcartCommand(0)) //Yes, apparently it's 0 for full block
 		rwep.WritePass(data[i : i+FXBlockSize])
