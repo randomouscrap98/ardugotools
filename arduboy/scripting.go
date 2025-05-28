@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/pelletier/go-toml"
+
 	lua "github.com/yuin/gopher-lua"
 )
 
@@ -187,6 +189,20 @@ func luaJson(L *lua.LState) int {
 	return 1
 }
 
+// Simple function to decode a toml string into a lua table. Returns the table.
+func luaToml(L *lua.LState) int {
+	str := L.ToString(1)
+	var value interface{}
+	err := toml.Unmarshal([]byte(str), &value)
+	if err != nil {
+		L.RaiseError("Couldn't parse toml: %s", err)
+		return 0
+	}
+	L.Push(luaDecodeValue(L, value))
+	log.Printf("Decoded toml to table in lua script")
+	return 1
+}
+
 // DecodeValue converts the value to a Lua value.
 // Taken from https://github.com/layeh/gopher-json
 // This function only converts values that the encoding/json package decodes to.
@@ -196,6 +212,8 @@ func luaDecodeValue(L *lua.LState, value interface{}) lua.LValue {
 	case bool:
 		return lua.LBool(converted)
 	case float64:
+		return lua.LNumber(converted)
+	case int64: // NOTE: wasn't needed for json, needed for toml
 		return lua.LNumber(converted)
 	case string:
 		return lua.LString(converted)
@@ -264,6 +282,7 @@ func setBasicLuaFunctions(L *lua.LState) {
 	L.SetGlobal("hex2bin", L.NewFunction(luaHex2Bin))
 	L.SetGlobal("base64", L.NewFunction(luaBase64))
 	L.SetGlobal("json", L.NewFunction(luaJson))
+	L.SetGlobal("toml", L.NewFunction(luaToml))
 	L.SetGlobal("bytes", L.NewFunction(luaBytes))
 	L.SetGlobal("listdir", L.NewFunction(luaListDir))
 	L.SetGlobal("image_resize", L.NewFunction(luaImageResize))

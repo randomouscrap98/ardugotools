@@ -23,6 +23,8 @@
 --                      // Useful for manually generating pointers at arbitrary locations
 -- * json(raw)          // Parse json into table. raw can be a raw string or any other raw data,
 --                      // such as the results from file()
+-- * toml(raw)          // Parse toml into table. raw can be a raw string or any other raw data,
+--                      // such as the results from file()
 -- * image(params)      // Convert image to tilied, raw format. A complex function
 --  PARAMETERS:
 --   + filename         // Required: path to the image (specific filename doesn't matter)

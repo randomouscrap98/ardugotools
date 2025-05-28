@@ -22,10 +22,27 @@ log(a, b, c)
 
 	logs, err := RunLuaFlashcartGenerator(script, arguments, "")
 	if err != nil {
-		t.Fatalf("Error running basic flashcart generator: %s", err)
+		t.Fatalf("Error running basic flashcart generator for argument testing: %s", err)
 	}
 
 	expected := "what\thow\tthis -- is == weird\n"
+	if logs != expected {
+		t.Fatalf("Expected logs '%s', got '%s'", expected, logs)
+	}
+}
+
+func TestRunLuaFlashcartGenerator_Toml(t *testing.T) {
+	script := `
+t = toml("[Header]\nmyvalue=55\nmystring=\"yes\"\n[Header.Extra]\nmyarray=[68.75]")
+log(t.Header.myvalue, t.Header.mystring, t.Header.Extra.myarray[1])
+  `
+
+	logs, err := RunLuaFlashcartGenerator(script, nil, "")
+	if err != nil {
+		t.Fatalf("Error running basic flashcart generator for toml testing: %s", err)
+	}
+
+	expected := "55\tyes\t68.75\n"
 	if logs != expected {
 		t.Fatalf("Expected logs '%s', got '%s'", expected, logs)
 	}
