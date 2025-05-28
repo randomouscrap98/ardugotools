@@ -520,6 +520,7 @@ func RunLuaFxGenerator(script string, header io.Writer, bin io.Writer, dir strin
 	// Always write the preamble before the user starts...
 	_, err := io.WriteString(state.Header, fmt.Sprintf(`#pragma once
 
+#include <Arduboy2.h>
 using uint24_t = __uint24;
 
 // Generated with ardugotools on %s
@@ -551,7 +552,7 @@ using uint24_t = __uint24;
 	}
 	sb.WriteString("// Helper macro to initialize fx, call in setup()\n")
 	if state.HasSave {
-		sb.WriteString("#define FX_INIT() FX::begin(FX_DATA_PAGE, FX_DATA_SAVE)\n")
+		sb.WriteString("#define FX_INIT() FX::begin(FX_DATA_PAGE, FX_SAVE_PAGE)\n")
 	} else {
 		sb.WriteString("#define FX_INIT() FX::begin(FX_DATA_PAGE)\n")
 	}

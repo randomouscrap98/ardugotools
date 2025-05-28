@@ -394,7 +394,7 @@ func TestRunLuaFxGenerator_Real1(t *testing.T) {
 		"FX_DATA_BYTES",
 		"FX_SAVE_PAGE",
 		"FX_SAVE_BYTES",
-		"FX::begin(FX_DATA_PAGE, FX_DATA_SAVE)",
+		"FX::begin(FX_DATA_PAGE, FX_SAVE_PAGE)",
 		"uint24_t spritesheet",
 		"spritesheetFrames",
 		"spritesheetWidth",
