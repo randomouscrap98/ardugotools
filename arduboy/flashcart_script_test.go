@@ -48,6 +48,23 @@ log(t.Header.myvalue, t.Header.mystring, t.Header.Extra.myarray[1])
 	}
 }
 
+func TestRunLuaFlashcartGenerator_TomlArray(t *testing.T) {
+	script := `
+t = toml("[[item]]\nmyvalue=55\nmystring=\"yes\"\n[[item]]\nmyvalue=33\nmystring=\"no\"")
+log(t.item[1].myvalue, t.item[2].myvalue)
+  `
+
+	logs, err := RunLuaFlashcartGenerator(script, nil, "")
+	if err != nil {
+		t.Fatalf("Error running basic flashcart generator for toml testing: %s", err)
+	}
+
+	expected := "55\t33\n"
+	if logs != expected {
+		t.Fatalf("Expected logs '%s', got '%s'", expected, logs)
+	}
+}
+
 // This function is available in all lua runtimes but I test it here
 // because it's where we expect to use it
 func TestRunLuaFlashcartGenerator_ListDir(t *testing.T) {

@@ -12,6 +12,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"github.com/pelletier/go-toml"
@@ -225,6 +226,12 @@ func luaDecodeValue(L *lua.LState, value interface{}) lua.LValue {
 			arr.Append(luaDecodeValue(L, item))
 		}
 		return arr
+	case []map[string]interface{}: // Some stupid stuff...
+		arr := L.CreateTable(len(converted), 0)
+		for _, item := range converted {
+			arr.Append(luaDecodeValue(L, item))
+		}
+		return arr
 	case map[string]interface{}:
 		tbl := L.CreateTable(0, len(converted))
 		for key, item := range converted {
@@ -233,9 +240,10 @@ func luaDecodeValue(L *lua.LState, value interface{}) lua.LValue {
 		return tbl
 	case nil:
 		return lua.LNil
+	default:
+		log.Printf("Unknown type in table: %s", reflect.TypeOf(value))
+		return lua.LNil
 	}
-
-	return lua.LNil
 }
 
 func luaHex2Bin(L *lua.LState) int {
